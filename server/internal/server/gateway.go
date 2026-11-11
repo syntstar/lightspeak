@@ -231,9 +231,12 @@ func (h *Hub) removeLocked(g *gwSession) {
 			delete(h.byUser, g.userID)
 		}
 	}
+	// detach sets the timer under g.mu. Lock order is always h.mu, then g.mu.
+	g.mu.Lock()
 	if g.expire != nil {
 		g.expire.Stop()
 	}
+	g.mu.Unlock()
 }
 
 func (h *Hub) closeAll() {
