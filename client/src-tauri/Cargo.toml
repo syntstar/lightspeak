@@ -1,6 +1,6 @@
 [package]
 name = "lightspeak"
-version = "1.0.0"
+version = "1.1.0"
 description = "Lightspeak – self-hosted voice chat, text chat and screen sharing"
 authors = ["Lightspeak contributors"]
 license = "AGPL-3.0-only"

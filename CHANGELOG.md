@@ -2,7 +2,7 @@
 
 All notable changes to Lightspeak are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.1.0
 
 ### Added
 
@@ -11,6 +11,11 @@ All notable changes to Lightspeak are documented here. The format follows [Keep 
 ### Changed
 
 - The second field of the invite dialog is now labelled “Can be used by” instead of repeating “Valid for”.
+- Updated dependencies, among them LiveKit protocol 1.53.2, SQLite 1.62.0 and Vite 8.3.6.
+
+### Fixed
+
+- A data race in the server when a disconnected session was removed while its resume timer was still pending.
 
 ## 1.0.0
 
