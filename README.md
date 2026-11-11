@@ -19,6 +19,8 @@
 
 ---
 
+![Lightspeak with a text channel open and five people in a voice channel](docs/images/chat-dark.png)
+
 Lightspeak is a small, private alternative to Discord and TeamSpeak. You run the server yourself – on a cheap VPS, a Raspberry Pi or an old PC – and invite your friends with a link. There is no central service, no account with a company, no tracking and no ads.
 
 It was built around one idea: **a chat app should not need a gigabyte of RAM.** The Windows app is a few megabytes, starts in under a second and stays out of the way while you play.
@@ -34,6 +36,10 @@ It was built around one idea: **a chat app should not need a gigabyte of RAM.** 
 - 🌍 **No install needed for guests** – the same client runs in Chrome, Edge, Firefox and Safari (also on macOS and Linux), served by your own server.
 - 🧰 **One-command server** – a single installer sets up the server, [LiveKit](https://livekit.io) and HTTPS certificates as systemd services. No Docker, about 250 MB of RAM in total.
 - 🇬🇧 🇩🇪 **English and German**, light and dark theme, accent colours.
+
+| Light theme | Voice settings |
+| :---: | :---: |
+| ![A text channel with a code block in the light theme](docs/images/chat-light.png) | ![The voice and audio settings](docs/images/settings-dark.png) |
 
 ## How light is it?
 
