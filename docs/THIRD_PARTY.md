@@ -20,7 +20,7 @@ Rule for contributions: every library, asset or code snippet that is added gets 
 | @noble/ciphers | 2.4.0 | MIT | https://github.com/paulmillr/noble-ciphers | Browser client: XSalsa20-Poly1305 / HSalsa20 (sealed box) |
 | @noble/hashes | 2.4.0 | MIT | https://github.com/paulmillr/noble-hashes | Browser client: BLAKE2b (sealed-box nonce) |
 | Inter (@fontsource-variable/inter) | 5.3.0 | OFL-1.1 | https://github.com/rsms/inter | Interface font (Latin and Latin Extended, embedded) |
-| Lucide (@lucide/svelte) | 1.66.0 | ISC | https://github.com/lucide-icons/lucide | Icons (imported individually) |
+| Lucide (@lucide/svelte) | 1.70.0 | ISC | https://github.com/lucide-icons/lucide | Icons (imported individually) |
 | windows (crate) | 0.62.2 | MIT / Apache-2.0 | https://github.com/microsoft/windows-rs | Hooks, windows, audio |
 | wasapi (crate) | 0.26.0 | MIT | https://github.com/HEnquist/wasapi-rs | Process loopback capture |
 | webview2-com | 0.39.1 | MIT | https://github.com/wravery/webview2-rs | WebView2 memory target |
@@ -34,12 +34,12 @@ Rule for contributions: every library, asset or code snippet that is added gets 
 |---|---|---|---|---|
 | LiveKit Server | 1.13.11 | Apache-2.0 | https://github.com/livekit/livekit | Media server (SFU); downloaded by the installer, not bundled |
 | Caddy | distribution package | Apache-2.0 | https://github.com/caddyserver/caddy | Reverse proxy and HTTPS; installed by the installer, not bundled |
-| github.com/livekit/protocol | 1.53.1 | Apache-2.0 | https://github.com/livekit/protocol | Access tokens, RoomService client |
+| github.com/livekit/protocol | 1.53.2 | Apache-2.0 | https://github.com/livekit/protocol | Access tokens, RoomService client |
 | github.com/twitchtv/twirp | 8.1.3 | Apache-2.0 | https://github.com/twitchtv/twirp | RoomService transport |
 | google.golang.org/protobuf | 1.36.12 | BSD-3-Clause | https://github.com/protocolbuffers/protobuf-go | Webhook JSON |
 | github.com/go-chi/chi/v5 | 5.5.0 | MIT | https://github.com/go-chi/chi | HTTP router |
 | github.com/coder/websocket | 1.8.15 | ISC | https://github.com/coder/websocket | WebSocket gateway |
-| modernc.org/sqlite | 1.61.1 | BSD-3-Clause | https://gitlab.com/cznic/sqlite | SQLite without CGO |
+| modernc.org/sqlite | 1.62.0 | BSD-3-Clause | https://gitlab.com/cznic/sqlite | SQLite without CGO |
 | golang.org/x/crypto | 0.58.0 | BSD-3-Clause | https://go.googlesource.com/crypto | Argon2id |
 | golang.org/x/image | 0.47.0 | BSD-3-Clause | https://go.googlesource.com/image | WebP decoder, image scaling |
 
