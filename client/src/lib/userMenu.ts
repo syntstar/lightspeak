@@ -147,7 +147,8 @@ export function userMenuItems(userId: ID, opts: { onMention?: () => void } = {})
       icon: UserMinus,
       action: () => run(app.removeRelation(userId)),
     });
-  } else if (rel !== "blocked") {
+  } else if (rel !== "blocked" && !app.me?.guest && !app.user(userId)?.guest) {
+    // Guests come and go: no friendships with or for them.
     items.push({
       label: t("user.addFriend"),
       icon: UserPlus,

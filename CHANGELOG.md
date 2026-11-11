@@ -2,6 +2,16 @@
 
 All notable changes to Lightspeak are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Guest access:** an invite can allow guests. Whoever opens such a link joins the space with just a name, without creating an account. A guest stays in that one space and is removed again when they sign out, are removed from the space, or have not been seen for 30 days. Guest invites follow `LS_SIGNUP` like account creation does.
+
+### Changed
+
+- The second field of the invite dialog is now labelled “Can be used by” instead of repeating “Valid for”.
+
 ## 1.0.0
 
 First public release.

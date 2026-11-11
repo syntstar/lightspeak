@@ -20,6 +20,8 @@ type User struct {
 	// Deleted: the account deleted itself; clients show a
 	// neutral name.
 	Deleted bool `json:"deleted,omitempty"`
+	// Guest: joined through a guest invite, without an account.
+	Guest bool `json:"guest,omitempty"`
 }
 
 type Me struct {
@@ -99,13 +101,13 @@ func avatarURL(key sql.NullString) string {
 	return "/avatars/" + key.String
 }
 
-const userCols = `id, username, display_name, avatar_key, deleted_at IS NOT NULL`
+const userCols = `id, username, display_name, avatar_key, deleted_at IS NOT NULL, is_guest`
 
 func scanUser(sc interface{ Scan(...any) error }) (User, error) {
 	var u User
 	var id int64
 	var av sql.NullString
-	err := sc.Scan(&id, &u.Username, &u.DisplayName, &av, &u.Deleted)
+	err := sc.Scan(&id, &u.Username, &u.DisplayName, &av, &u.Deleted, &u.Guest)
 	u.ID = ID(id)
 	u.AvatarURL = avatarURL(av)
 	return u, err
@@ -120,8 +122,8 @@ func (s *Server) loadMe(ctx context.Context, id int64) (Me, error) {
 	var uid int64
 	var av sql.NullString
 	var admin int
-	err := s.db.R.QueryRowContext(ctx, `SELECT id, username, display_name, avatar_key, status, status_text, is_server_admin, created_at FROM users WHERE id=?`, id).
-		Scan(&uid, &m.Username, &m.DisplayName, &av, &m.Status, &m.StatusText, &admin, &m.CreatedAt)
+	err := s.db.R.QueryRowContext(ctx, `SELECT id, username, display_name, avatar_key, status, status_text, is_server_admin, created_at, is_guest FROM users WHERE id=?`, id).
+		Scan(&uid, &m.Username, &m.DisplayName, &av, &m.Status, &m.StatusText, &admin, &m.CreatedAt, &m.Guest)
 	m.ID = ID(uid)
 	m.AvatarURL = avatarURL(av)
 	m.IsServerAdmin = admin == 1

@@ -28,7 +28,7 @@ const ProtocolVersion = 1
 var Version = "dev"
 
 type limits struct {
-	login, register, upload, messages, ws, invitePreview, general *ratelimit.Limiter
+	login, register, guest, upload, messages, ws, invitePreview, general *ratelimit.Limiter
 }
 
 type Server struct {
@@ -57,6 +57,7 @@ func New(cfg *config.Config, db *store.DB, log *slog.Logger) *Server {
 		lim: limits{
 			login:         ratelimit.PerMinute(5),
 			register:      ratelimit.PerHour(3),
+			guest:         ratelimit.PerHour(10),
 			upload:        ratelimit.PerMinute(30),
 			messages:      ratelimit.New(10, 20),
 			ws:            ratelimit.PerMinute(10),
@@ -206,6 +207,8 @@ type Session struct {
 	UserID   int64
 	DeviceID int64
 	Admin    bool
+	// Guest: account without a password, see guest.go.
+	Guest bool
 }
 
 func sess(r *http.Request) *Session {
@@ -224,12 +227,12 @@ func (s *Server) authenticate(ctx context.Context, token string) (*Session, erro
 	var se Session
 	var dev sql.NullInt64
 	var expires, lastUsed int64
-	var admin int
+	var admin, guest int
 	err := s.db.R.QueryRowContext(ctx, `
-		SELECT s.id, s.user_id, s.device_id, s.expires_at, s.last_used_at, u.is_server_admin
+		SELECT s.id, s.user_id, s.device_id, s.expires_at, s.last_used_at, u.is_server_admin, u.is_guest
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ? AND s.revoked_at IS NULL AND u.disabled_at IS NULL`, hash).
-		Scan(&se.ID, &se.UserID, &dev, &expires, &lastUsed, &admin)
+		Scan(&se.ID, &se.UserID, &dev, &expires, &lastUsed, &admin, &guest)
 	if err != nil {
 		return nil, errUnauthorized
 	}
@@ -239,10 +242,11 @@ func (s *Server) authenticate(ctx context.Context, token string) (*Session, erro
 	}
 	se.DeviceID = dev.Int64
 	se.Admin = admin == 1
+	se.Guest = guest == 1
 	// Sliding expiry, written at most once per hour to avoid write churn.
 	if now-lastUsed > time.Hour.Milliseconds() {
 		_, _ = s.db.W.ExecContext(ctx, `UPDATE sessions SET last_used_at=?, expires_at=? WHERE id=?`,
-			now, now+sessionTTL.Milliseconds(), se.ID)
+			now, now+sessionTTLFor(se.Guest).Milliseconds(), se.ID)
 		if se.DeviceID != 0 {
 			_, _ = s.db.W.ExecContext(ctx, `UPDATE devices SET last_seen_at=? WHERE id=?`, now, se.DeviceID)
 		}
@@ -371,6 +375,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/invites/{code}", s.h(s.getInvite))
 		r.Post("/auth/register", s.h(s.register))
 		r.Post("/auth/login", s.h(s.login))
+		r.Post("/auth/guest", s.h(s.guestJoin))
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
@@ -420,6 +425,9 @@ func (s *Server) maintenance(ctx context.Context) {
 		if n, err := s.files.purgeOlderThan(ctx, time.Duration(s.cfg.RetentionDays)*24*time.Hour); err == nil && n > 0 {
 			s.log.Info("retention purge", "count", n)
 		}
+	}
+	if n := s.purgeGuests(ctx); n > 0 {
+		s.log.Info("removed ended guests", "count", n)
 	}
 	_, _ = s.db.W.ExecContext(ctx, `DELETE FROM webhook_events WHERE received_at < ?`, s.nowMs()-24*time.Hour.Milliseconds())
 	_, _ = s.db.W.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < ? OR revoked_at < ?`, s.nowMs(), s.nowMs()-30*24*time.Hour.Milliseconds())

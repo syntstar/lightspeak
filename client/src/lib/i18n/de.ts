@@ -664,8 +664,29 @@ export const de: Messages = {
   "invite.d1": "1 Tag",
   "invite.d7": "7 Tage",
   "invite.never": "Unbegrenzt",
-  "invite.uses": "Gültig für",
+  "invite.uses": "Nutzbar von",
   "invite.usesUnlimited": "Beliebig viele Personen",
+  "invite.guest": "Gastzugang erlauben",
+  "invite.guestHint":
+    "Eingeladene können auch ohne Konto beitreten – nur mit einem Namen. Ein Gast verschwindet wieder, sobald er sich abmeldet oder seine App- oder Browserdaten gelöscht werden.",
+  "invite.guestBlocked":
+    "Auf diesem Server für deine Einladungen nicht verfügbar, weil die Registrierung eingeschränkt ist.",
+  "invite.guestTag": "mit Gastzugang",
+  "auth.guestTitle": "Als Gast beitreten",
+  "auth.guestName": "Dein Name",
+  "auth.guestHint":
+    "Du brauchst kein Konto. Der Gastzugang gilt nur auf diesem Gerät und endet, wenn du dich abmeldest oder die App-Daten gelöscht werden.",
+  "auth.guestInstead": "Ohne Konto als Gast beitreten",
+  "auth.registerInstead": "Lieber ein Konto erstellen",
+  "members.guest": "Gast",
+  "account.guest": "Gastzugang",
+  "account.guestHint":
+    "Du bist als Gast hier. Wenn du dich abmeldest, wird dein Gastzugang gelöscht – zum Wiederkommen brauchst du eine neue Einladung.",
+  "account.guestEnd": "Gastzugang beenden",
+  "account.guestEndConfirm":
+    "Gastzugang beenden? Du verlässt den Space und brauchst zum Wiederkommen eine neue Einladung.",
+  "err.guest_restricted": "Das ist mit einem Gastzugang nicht möglich.",
+  "err.guest_not_allowed": "Diese Einladung erlaubt keinen Gastzugang.",
   "invite.create": "Link erstellen und kopieren",
   "invite.createAnother": "Weiteren Link erstellen",
   "invite.link": "Einladungslink",

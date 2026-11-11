@@ -133,6 +133,7 @@ export function createItems(
 
 /** The space permission, unless the operator reserved invites (LS_INVITES). */
 function mayInvite(spaceId: ID): boolean {
+  if (app.me?.guest) return false;
   return can(spaceId, P.invite) && (app.limits.invites !== "admins" || !!app.me?.isServerAdmin);
 }
 
@@ -343,13 +344,14 @@ export function memberAdminItems(spaceId: ID, userId: ID): MenuItem[] {
   return items.length ? [{ separator: true }, ...items] : [];
 }
 
-/** Short tag next to a member's name: owner, server admin or their highest role. */
+/** Short tag next to a member's name: owner, server admin, their highest role or "guest". */
 export function memberLabel(spaceId: ID, userId: ID, roleIds: readonly ID[], serverAdmin: boolean): string {
   const sp = app.spaces[spaceId];
   if (!sp) return "";
   if (sp.ownerId === userId) return t("members.owner");
   if (serverAdmin) return t("members.serverAdmin");
-  return sp.roles.find((r) => roleIds.includes(r.id))?.name ?? "";
+  const role = sp.roles.find((r) => roleIds.includes(r.id))?.name;
+  return role ?? (app.user(userId)?.guest ? t("members.guest") : "");
 }
 
 export interface ChannelRights {

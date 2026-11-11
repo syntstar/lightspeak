@@ -616,6 +616,11 @@ func (s *Server) doTransfer(w http.ResponseWriter, r *http.Request, spaceID int6
 	if uid == old {
 		return badRequest("already_owner")
 	}
+	if guest, err := s.isGuest(ctx, s.db.R, uid); err != nil {
+		return err
+	} else if guest {
+		return errGuest // the space would be stuck once the guest is gone
+	}
 	err = s.db.Tx(ctx, func(tx *sql.Tx) error {
 		for _, q := range []struct {
 			sql  string

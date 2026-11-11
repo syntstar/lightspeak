@@ -123,4 +123,9 @@ export class Api {
   }) {
     return this.post<AuthResponse>("/auth/register", req);
   }
+
+  /** Joins through a guest invite: no account, just a name. */
+  guest(req: { inviteCode: string; displayName: string; deviceName: string; devicePublicKey: string }) {
+    return this.post<AuthResponse>("/auth/guest", req);
+  }
 }

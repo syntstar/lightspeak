@@ -204,6 +204,9 @@ func (s *Server) createSpace(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	se, ctx := sess(r), r.Context()
+	if se.Guest {
+		return errGuest
+	}
 	name := cleanName(req.Name, 64)
 	if name == "" {
 		return badRequest("invalid_name")
@@ -444,7 +447,7 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) error {
 	if err := mr.Err(); err != nil {
 		return err
 	}
-	rows, err := s.db.R.QueryContext(ctx, `SELECT m.joined_at, u.is_server_admin, u.id, u.username, u.display_name, u.avatar_key
+	rows, err := s.db.R.QueryContext(ctx, `SELECT m.joined_at, u.is_server_admin, u.id, u.username, u.display_name, u.avatar_key, u.is_guest
 		FROM space_members m JOIN users u ON u.id=m.user_id WHERE m.space_id=? ORDER BY u.display_name COLLATE NOCASE`, id)
 	if err != nil {
 		return err
@@ -460,7 +463,7 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) error {
 		var uid int64
 		var sadmin int
 		var av sql.NullString
-		if err := rows.Scan(&m.JoinedAt, &sadmin, &uid, &m.User.Username, &m.User.DisplayName, &av); err != nil {
+		if err := rows.Scan(&m.JoinedAt, &sadmin, &uid, &m.User.Username, &m.User.DisplayName, &av, &m.User.Guest); err != nil {
 			return err
 		}
 		m.SpaceID, m.UserID, m.User.ID, m.User.AvatarURL = ID(id), ID(uid), ID(uid), avatarURL(av)
@@ -538,6 +541,7 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) error {
 		s.audit(ctx, se.UserID, id, "member_kick", uid, nil)
 	}
 	s.afterMemberLeft(ctx, id, uid)
+	s.removeGuest(context.WithoutCancel(ctx), uid) // a guest has no other space
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -630,6 +634,7 @@ func (s *Server) banMember(w http.ResponseWriter, r *http.Request) error {
 	if target.Member {
 		s.afterMemberLeft(ctx, id, uid)
 	}
+	s.removeGuest(context.WithoutCancel(ctx), uid)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -698,6 +703,7 @@ type inviteDTO struct {
 	MaxUses   *int64 `json:"maxUses"`
 	Uses      int64  `json:"uses"`
 	ExpiresAt *int64 `json:"expiresAt"`
+	Guest     bool   `json:"guest,omitempty"`
 	CreatedBy ID     `json:"createdBy"`
 	CreatedAt int64  `json:"createdAt"`
 	URL       string `json:"url"`
@@ -709,6 +715,8 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		MaxAgeSeconds int64 `json:"maxAgeSeconds"`
 		MaxUses       int64 `json:"maxUses"`
+		// Guest: people may also join without an account (guest.go).
+		Guest bool `json:"guest"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -720,6 +728,9 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request) error {
 	}
 	if _, err := s.requireSpace(ctx, se, id, PermInvite); err != nil {
 		return err
+	}
+	if se.Guest {
+		return errGuest
 	}
 	if s.cfg.Invites == config.InvitesAdmins && !se.Admin {
 		return errf(http.StatusForbidden, "invites_restricted", "only server admins may invite on this server")
@@ -739,19 +750,19 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request) error {
 	if active >= 50 {
 		return errf(http.StatusForbidden, "invite_limit", "too many invites")
 	}
-	d, err := s.insertInvite(ctx, id, se.UserID, req.MaxAgeSeconds, req.MaxUses, false)
+	d, err := s.insertInvite(ctx, id, se.UserID, req.MaxAgeSeconds, req.MaxUses, false, req.Guest)
 	if err != nil {
 		return err
 	}
-	s.audit(ctx, se.UserID, id, "invite_create", 0, map[string]any{"code": d.Code[:4] + "…"})
+	s.audit(ctx, se.UserID, id, "invite_create", 0, map[string]any{"code": d.Code[:4] + "…", "guest": d.Guest})
 	writeJSON(w, 201, d)
 	return nil
 }
 
 // InsertInvite is also used by the admin CLI (spaceID 0 = registration only).
-func (s *Server) insertInvite(ctx context.Context, spaceID, by, maxAgeSec, maxUses int64, grantsAdmin bool) (inviteDTO, error) {
+func (s *Server) insertInvite(ctx context.Context, spaceID, by, maxAgeSec, maxUses int64, grantsAdmin, guest bool) (inviteDTO, error) {
 	code, now := auth.RandomCode(10), s.nowMs()
-	d := inviteDTO{Code: code, SpaceID: optID(spaceID), CreatedBy: ID(by), CreatedAt: now, URL: s.inviteURL(code)}
+	d := inviteDTO{Code: code, SpaceID: optID(spaceID), Guest: guest, CreatedBy: ID(by), CreatedAt: now, URL: s.inviteURL(code)}
 	var exp, mu, sp, cb any
 	if maxAgeSec > 0 {
 		e := now + maxAgeSec*1000
@@ -770,14 +781,14 @@ func (s *Server) insertInvite(ctx context.Context, spaceID, by, maxAgeSec, maxUs
 	if grantsAdmin {
 		ga = 1
 	}
-	_, err := s.db.W.ExecContext(ctx, `INSERT INTO invites(code, space_id, created_by, max_uses, expires_at, grants_admin, created_at) VALUES (?,?,?,?,?,?,?)`,
-		code, sp, cb, mu, exp, ga, now)
+	_, err := s.db.W.ExecContext(ctx, `INSERT INTO invites(code, space_id, created_by, max_uses, expires_at, grants_admin, guest, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+		code, sp, cb, mu, exp, ga, guest, now)
 	return d, err
 }
 
 // CreateInvite exposes invite creation to the admin CLI.
 func (s *Server) CreateInvite(ctx context.Context, spaceID int64, maxAgeSec, maxUses int64, grantsAdmin bool) (code, url string, err error) {
-	d, err := s.insertInvite(ctx, spaceID, 0, maxAgeSec, maxUses, grantsAdmin)
+	d, err := s.insertInvite(ctx, spaceID, 0, maxAgeSec, maxUses, grantsAdmin, false)
 	return d.Code, d.URL, err
 }
 
@@ -802,7 +813,7 @@ func (s *Server) listInvites(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.requireSpace(ctx, se, id, PermInvite); err != nil {
 		return err
 	}
-	rows, err := s.db.R.QueryContext(ctx, `SELECT code, max_uses, uses, expires_at, COALESCE(created_by,0), created_at FROM invites
+	rows, err := s.db.R.QueryContext(ctx, `SELECT code, max_uses, uses, expires_at, COALESCE(created_by,0), created_at, guest FROM invites
 		WHERE space_id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY created_at DESC`, id, s.nowMs())
 	if err != nil {
 		return err
@@ -813,7 +824,7 @@ func (s *Server) listInvites(w http.ResponseWriter, r *http.Request) error {
 		var d inviteDTO
 		var mu, exp sql.NullInt64
 		var by int64
-		if err := rows.Scan(&d.Code, &mu, &d.Uses, &exp, &by, &d.CreatedAt); err != nil {
+		if err := rows.Scan(&d.Code, &mu, &d.Uses, &exp, &by, &d.CreatedAt, &d.Guest); err != nil {
 			return err
 		}
 		if mu.Valid {
@@ -874,6 +885,9 @@ func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) error {
 	}
 	if iv.SpaceID == 0 {
 		return badRequest("invite_not_for_space")
+	}
+	if se.Guest {
+		return errGuest // a guest belongs to the space it was invited to
 	}
 	a, err := spaceAccess(ctx, s.db.R, iv.SpaceID, se.UserID)
 	if err != nil {

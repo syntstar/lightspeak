@@ -13,6 +13,8 @@ export interface User {
   avatarUrl?: string;
   /** The account deleted itself. */
   deleted?: boolean;
+  /** Joined through a guest invite: no account, gone when the session ends. */
+  guest?: boolean;
 }
 
 export interface Me extends User {
@@ -199,4 +201,6 @@ export interface InvitePreview {
   space?: { id: ID; name: string; iconUrl?: string; memberCount: number };
   /** Whether this invite may create a new account (server signup policy). */
   signup?: boolean;
+  /** Whether people may also join without an account, as a guest. */
+  guest?: boolean;
 }

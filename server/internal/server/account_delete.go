@@ -24,13 +24,15 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) error {
 	}
 	se, ctx := sess(r), r.Context()
 	uid := se.UserID
+	if se.Guest {
+		return errGuest // guests have no password: signing out removes them
+	}
 	if !s.lim.login.Allow("pw" + ID(uid).String()) {
 		return errRateLimited
 	}
 	var hash string
 	var admin int
-	var avatar sql.NullString
-	if err := s.db.R.QueryRowContext(ctx, `SELECT password_hash, is_server_admin, avatar_key FROM users WHERE id=?`, uid).Scan(&hash, &admin, &avatar); err != nil {
+	if err := s.db.R.QueryRowContext(ctx, `SELECT password_hash, is_server_admin FROM users WHERE id=?`, uid).Scan(&hash, &admin); err != nil {
 		return err
 	}
 	if len(req.Password) > 256 || auth.Verify(req.Password, hash) != nil {
@@ -52,7 +54,22 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) error {
 			return errf(http.StatusConflict, "last_server_admin", "the server needs another admin first")
 		}
 	}
+	if err := s.removeAccount(ctx, uid); err != nil {
+		return err
+	}
+	s.audit(ctx, uid, 0, "account_deleted", uid, nil)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
 
+// removeAccount anonymises uid, signs it out everywhere and takes it out of
+// every space, group and friends list (account deletion and guests that end).
+// The caller has checked that it owns no space.
+func (s *Server) removeAccount(ctx context.Context, uid int64) error {
+	var avatar sql.NullString
+	if err := s.db.R.QueryRowContext(ctx, `SELECT avatar_key FROM users WHERE id=?`, uid).Scan(&avatar); err != nil {
+		return err
+	}
 	// Everyone who knew the user gets the anonymised profile afterwards.
 	related, err := s.relatedUsers(ctx, uid)
 	if err != nil {
@@ -104,12 +121,10 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	s.audit(ctx, uid, 0, "account_deleted", uid, nil)
 	s.afterAccountDeleted(context.WithoutCancel(ctx), uid, sessions, spaces, groups, rels, related)
 	if avatar.Valid {
 		s.files.removeAvatar(avatar.String)
 	}
-	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 

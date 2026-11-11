@@ -20,6 +20,10 @@ On the invite page click **“Open in browser”** – Lightspeak then runs in C
 
 Forgot your password? The server admin can set a temporary one; change it afterwards under **Settings → My account**. There you can also **delete** your account (with your password; hand over or delete your own spaces first). Your messages then remain as “Deleted user”.
 
+### Join as a guest
+
+If the invite allows guests, the app and the browser client first ask only for a **name**: enter it and click **“Join as a guest”**. No username, no password. A guest belongs to the one space of the invite and cannot add friends, create spaces or invite others. Guest access is tied to the device: it ends when you sign out, when the app or browser data is cleared, when you are removed from the space, or after 30 days without opening Lightspeak. Your messages stay, shown as written by a deleted user. Prefer to stay? Choose **“Create an account instead”** on the same screen.
+
 ## 3. Talk
 
 - Click a **voice channel** (speaker icon) to join. The voice panel with **Disconnect** appears at the bottom left.
@@ -57,7 +61,7 @@ To watch: click the **LIVE** badge next to the name. No sound when sharing a win
 
 ## 6. Invite friends
 
-If you may invite people (owner, admin or a role with “Invite people”): click the **space name** at the top left → **“Invite people”** → pick how long it is valid → **“Create and copy link”** → send the link.
+If you may invite people (owner, admin or a role with “Invite people”): click the **space name** at the top left → **“Invite people”** → pick how long it is valid and how many people may use it → **“Create and copy link”** → send the link. Switch on **“Allow guest access”** if people should be able to drop in with just a name, without creating an account (see [Join as a guest](#join-as-a-guest)); the switch is unavailable if the server does not allow it.
 
 ## 7. Good to know
 

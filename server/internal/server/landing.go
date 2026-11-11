@@ -16,7 +16,7 @@ import (
 const installerName = "Lightspeak-setup.exe"
 
 type landingText struct {
-	Lang, Title, Lead, Open, Browser, BrowserHint, Download, Steps1, Steps2, Steps3, Invalid, Smart, Server string
+	Lang, Title, Lead, Open, Browser, BrowserHint, Download, Steps1, Steps2, Steps3, Steps3Guest, Invalid, Smart, Server string
 }
 
 var landingTexts = map[string]landingText{
@@ -28,6 +28,7 @@ var landingTexts = map[string]landingText{
 		Steps1:      "Lade Lightspeak herunter und installiere es.",
 		Steps2:      "Klicke danach auf „In Lightspeak öffnen“ – oder füge den Einladungslink in der App ein.",
 		Steps3:      "Wähle Benutzername und Passwort – fertig.",
+		Steps3Guest: "Gib deinen Namen ein – fertig. Ein Konto brauchst du nicht.",
 		Invalid:     "Diese Einladung ist ungültig oder abgelaufen. Bitte frag nach einem neuen Link.",
 		Smart:       "Windows zeigt eventuell „Der Computer wurde durch Windows geschützt“: auf „Weitere Informationen“ und dann „Trotzdem ausführen“ klicken.",
 		Server:      "Server",
@@ -40,6 +41,7 @@ var landingTexts = map[string]landingText{
 		Steps1:      "Download and install Lightspeak.",
 		Steps2:      "Then click “Open in Lightspeak” – or paste the invite link into the app.",
 		Steps3:      "Choose a username and password – done.",
+		Steps3Guest: "Enter your name – done. You do not need an account.",
 		Invalid:     "This invite is invalid or has expired. Please ask for a new link.",
 		Smart:       "Windows may show “Windows protected your PC”: click “More info”, then “Run anyway”.",
 		Server:      "Server",
@@ -76,7 +78,7 @@ a.primary{background:var(--accent);color:#fff}a.secondary{border:1px solid var(-
 {{if .Web}}<a class="btn secondary" href="/app/{{if .Code}}#invite={{.Code}}{{end}}">{{.T.Browser}}</a>{{end}}
 <a class="btn {{if .Code}}secondary{{else}}primary{{end}}" href="{{.DownloadHref}}">{{.T.Download}}</a>
 {{if .Web}}<small>{{.T.BrowserHint}}</small>{{end}}
-<ol><li>{{.T.Steps1}}</li><li>{{.T.Steps2}}</li><li>{{.T.Steps3}}</li></ol>
+<ol><li>{{.T.Steps1}}</li><li>{{.T.Steps2}}</li><li>{{if .Guest}}{{.T.Steps3Guest}}{{else}}{{.T.Steps3}}{{end}}</li></ol>
 <small>{{.T.Smart}}</small>{{end}}
 <small>{{.T.Server}}: {{.ServerName}}</small>
 </main></body></html>`))
@@ -118,7 +120,8 @@ func (s *Server) landingInvite(w http.ResponseWriter, r *http.Request) {
 	if iv.SpaceID != 0 {
 		_ = s.db.R.QueryRowContext(r.Context(), `SELECT name FROM spaces WHERE id=?`, iv.SpaceID).Scan(&space)
 	}
-	s.renderLanding(w, r, map[string]any{"Code": iv.Code, "Space": space})
+	guest, _ := s.inviteAdmitsGuests(r.Context(), s.db.R, iv)
+	s.renderLanding(w, r, map[string]any{"Code": iv.Code, "Space": space, "Guest": guest})
 }
 
 func (s *Server) landingDownload(w http.ResponseWriter, r *http.Request) {

@@ -343,8 +343,11 @@ class AppState {
 
   async completeAuth(token: string, me: Me, deviceId: ID, publicKey: string): Promise<void> {
     const s: StoredSession = { server: api.base, token, userId: me.id, deviceId };
-    serverPrefs().devices[me.username] = { deviceId, publicKey };
-    savePrefs();
+    // Remembered for the next sign-in; nobody signs in to a guest again.
+    if (!me.guest) {
+      serverPrefs().devices[me.username] = { deviceId, publicKey };
+      savePrefs();
+    }
     if (hasStore) await native.sessionSet(s);
     this.me = me;
     this.startSession(s);

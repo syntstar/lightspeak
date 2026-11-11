@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -51,6 +52,7 @@ type inviteRow struct {
 	ExpiresAt   sql.NullInt64
 	RevokedAt   sql.NullInt64
 	GrantsAdmin bool
+	Guest       bool
 	CreatedBy   int64
 	CreatedAt   int64
 }
@@ -62,8 +64,8 @@ func (s *Server) loadInvite(ctx context.Context, q querier, code string) (*invit
 	var iv inviteRow
 	var space, by sql.NullInt64
 	var ga int
-	err := q.QueryRowContext(ctx, `SELECT code, space_id, max_uses, uses, expires_at, revoked_at, grants_admin, created_by, created_at FROM invites WHERE code=?`, code).
-		Scan(&iv.Code, &space, &iv.MaxUses, &iv.Uses, &iv.ExpiresAt, &iv.RevokedAt, &ga, &by, &iv.CreatedAt)
+	err := q.QueryRowContext(ctx, `SELECT code, space_id, max_uses, uses, expires_at, revoked_at, grants_admin, guest, created_by, created_at FROM invites WHERE code=?`, code).
+		Scan(&iv.Code, &space, &iv.MaxUses, &iv.Uses, &iv.ExpiresAt, &iv.RevokedAt, &ga, &iv.Guest, &by, &iv.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound("invite_invalid")
 	}
@@ -165,7 +167,9 @@ func (s *Server) getInvite(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"code": iv.Code, "expiresAt": nullInt(iv.ExpiresAt), "signup": signup}
+	// guest: the invite also lets people in without an account.
+	out := map[string]any{"code": iv.Code, "expiresAt": nullInt(iv.ExpiresAt), "signup": signup,
+		"guest": signup && iv.Guest && iv.SpaceID != 0}
 	if iv.SpaceID != 0 {
 		var name string
 		var icon sql.NullString
@@ -213,14 +217,14 @@ func decodeKey(b64 string) ([]byte, error) {
 	return k, nil
 }
 
-func (s *Server) newSession(ctx context.Context, tx *sql.Tx, userID, deviceID int64, ua string) (string, error) {
+func (s *Server) newSession(ctx context.Context, tx *sql.Tx, userID, deviceID int64, ua string, ttl time.Duration) (string, error) {
 	tok, hash, err := auth.NewToken()
 	if err != nil {
 		return "", err
 	}
 	now := s.nowMs()
 	_, err = tx.ExecContext(ctx, `INSERT INTO sessions(id, user_id, device_id, token_hash, created_at, last_used_at, expires_at, user_agent) VALUES (?,?,?,?,?,?,?,?)`,
-		store.NewID(), userID, deviceID, hash, now, now, now+sessionTTL.Milliseconds(), clampText(ua, 200))
+		store.NewID(), userID, deviceID, hash, now, now, now+ttl.Milliseconds(), clampText(ua, 200))
 	return tok, err
 }
 
@@ -305,7 +309,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		token, err = s.newSession(ctx, tx, userID, deviceID, r.UserAgent())
+		token, err = s.newSession(ctx, tx, userID, deviceID, r.UserAgent(), sessionTTL)
 		return err
 	})
 	if err != nil {
@@ -394,7 +398,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		var err error
-		token, err = s.newSession(ctx, tx, userID, deviceID, r.UserAgent())
+		token, err = s.newSession(ctx, tx, userID, deviceID, r.UserAgent(), sessionTTL)
 		return err
 	})
 	if err != nil {
@@ -416,6 +420,10 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.hub.dropAuthSession(se.ID)
+	if se.Guest {
+		// Nobody can sign in to a guest again: it ends with its session.
+		s.removeGuest(context.WithoutCancel(r.Context()), se.UserID)
+	}
 	if isWebClient(r) {
 		s.clearSessionCookie(w)
 	}
@@ -456,6 +464,9 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		if req.Username != nil {
+			if se.Guest {
+				return errGuest
+			}
 			u := strings.ToLower(strings.TrimSpace(*req.Username))
 			if !auth.ValidUsername(u) {
 				return badRequest("invalid_username")
@@ -525,6 +536,9 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	se, ctx := sess(r), r.Context()
+	if se.Guest {
+		return errGuest
+	}
 	if !s.lim.login.Allow("pw" + ID(se.UserID).String()) {
 		return errRateLimited
 	}
@@ -922,15 +936,19 @@ func (s *Server) setRelationship(w http.ResponseWriter, r *http.Request, other i
 	if other == me {
 		return badRequest("cannot_relate_self")
 	}
-	var exists int
-	if err := s.db.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id=?`, other).Scan(&exists); err != nil {
-		return err
-	}
-	if exists == 0 {
+	guest, err := s.isGuest(ctx, s.db.R, other)
+	if errors.Is(err, sql.ErrNoRows) {
 		return notFound("unknown_user")
 	}
+	if err != nil {
+		return err
+	}
+	// Friendships outlive a guest's visit; guests can still be blocked.
+	if kind == "friend" && (se.Guest || guest) {
+		return errGuest
+	}
 	var mine, theirs string
-	err := s.db.Tx(ctx, func(tx *sql.Tx) error {
+	err = s.db.Tx(ctx, func(tx *sql.Tx) error {
 		now := s.nowMs()
 		cur, err := s.relKind(ctx, tx, me, other)
 		if err != nil {

@@ -97,21 +97,24 @@
         </div>
       {/if}
     {/each}
-    <div class="item">
-      <button
-        type="button"
-        class="sq add"
-        aria-label={t("nav.addSpace")}
-        use:tooltip={{ text: t("nav.addSpace"), placement: "right" }}
-        onclick={(e) =>
-          openMenu(e, [
-            { label: t("space.create"), icon: Plus, action: onCreate },
-            { label: t("nav.joinSpace"), icon: Link, action: onJoin },
-          ])}
-      >
-        <Plus size={20} strokeWidth={1.75} />
-      </button>
-    </div>
+    <!-- Guests stay in the space they were invited to. -->
+    {#if !app.me?.guest}
+      <div class="item">
+        <button
+          type="button"
+          class="sq add"
+          aria-label={t("nav.addSpace")}
+          use:tooltip={{ text: t("nav.addSpace"), placement: "right" }}
+          onclick={(e) =>
+            openMenu(e, [
+              { label: t("space.create"), icon: Plus, action: onCreate },
+              { label: t("nav.joinSpace"), icon: Link, action: onJoin },
+            ])}
+        >
+          <Plus size={20} strokeWidth={1.75} />
+        </button>
+      </div>
+    {/if}
   </div>
 </nav>
 

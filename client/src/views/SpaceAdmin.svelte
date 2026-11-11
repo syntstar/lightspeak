@@ -52,6 +52,7 @@
     maxUses: number | null;
     uses: number;
     expiresAt: number | null;
+    guest?: boolean;
     url: string;
   }
   interface BanEntry {
@@ -95,6 +96,10 @@
   let invites = $state<Invite[]>([]);
   let inviteBusy = $state(false);
   let signupHint = $state(false);
+  /** Guest access: people join with just a name, no account. */
+  let guest = $state(false);
+  /** Whether this user's invites may admit guests (server signup policy). */
+  let guestOk = $state(true);
   const inviteUrl = (i: Invite) => i.url || `${api.base}/invite/${i.code}`;
 
   async function loadInvites(spaceId: ID) {
@@ -105,10 +110,13 @@
     }
   }
   async function checkSignup() {
-    // New accounts need a server admin's invite unless the server says otherwise.
-    if (app.me?.isServerAdmin) return;
+    // New accounts – and guests – need a server admin's invite unless the
+    // server says otherwise ("closed": nobody gets in without an account).
+    const admin = !!app.me?.isServerAdmin;
     const info = await fetchServerInfo(api.base).catch(() => null);
-    signupHint = !!info && info.signup !== "invite";
+    signupHint = !admin && !!info && info.signup !== "invite";
+    guestOk = !info || info.signup === "invite" || (info.signup === "admin" && admin);
+    if (!guestOk) guest = false;
   }
   async function createInvite(spaceId: ID) {
     inviteBusy = true;
@@ -116,6 +124,7 @@
       created = await api.post<Invite>(`/spaces/${spaceId}/invites`, {
         maxAgeSeconds: Number(maxAge),
         maxUses: Number(maxUses),
+        guest: guest && guestOk,
       });
       void loadInvites(spaceId);
       await copy(inviteUrl(created));
@@ -146,9 +155,10 @@
   }
   function inviteMeta(i: Invite): string {
     const expiry = i.expiresAt ? t("invite.expiresAt", { date: fmtDate(i.expiresAt) }) : t("invite.noExpiry");
-    return i.maxUses
+    const meta = i.maxUses
       ? t("invite.meta", { uses: i.uses, max: i.maxUses, expiry })
       : t("invite.metaUnlimited", { uses: i.uses, expiry });
+    return i.guest ? `${meta} · ${t("invite.guestTag")}` : meta;
   }
 
   // ---------- channel ----------
@@ -372,6 +382,7 @@
       created = null;
       maxAge = "86400";
       maxUses = "0";
+      guest = false;
       void loadInvites(cur.spaceId);
       void checkSignup();
     } else if (cur.kind === "channel") {
@@ -444,6 +455,15 @@
             ...[1, 5, 10, 25, 100].map((n) => ({ value: String(n), label: tp("invite.people", n) })),
           ]}
         />
+      </div>
+      <div class="group">
+        <div class="grow">
+          <span class="two">
+            {t("invite.guest")}
+            <small>{t(guestOk ? "invite.guestHint" : "invite.guestBlocked")}</small>
+          </span>
+          <Toggle label={t("invite.guest")} bind:checked={guest} disabled={!guestOk} />
+        </div>
       </div>
       {#if created}
         <div class="link">

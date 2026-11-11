@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Server choice, login and invite-based registration. The app has no
+  // Server choice, login, invite-based registration and guest access (an
+  // invite that lets people in with just a name). The app has no
   // built-in server: the user picks one by address or invite link,
   // and a link to a different server is always shown and confirmed first.
   import { onMount } from "svelte";
@@ -23,7 +24,10 @@
   import TextField from "../lib/ui/TextField.svelte";
   import CaptionButtons from "./CaptionButtons.svelte";
 
-  let mode = $state<"login" | "register">("login");
+  type Mode = "login" | "register" | "guest";
+  let mode = $state<Mode>("login");
+  /** Invite the guest form was offered for (once: the user may prefer an account). */
+  let guestOffered = "";
   let username = $state("");
   let displayName = $state("");
   let password = $state("");
@@ -157,12 +161,13 @@
 
   // ---------- account ----------
 
-  // Invite preview (debounced).
+  // Invite preview (debounced). Switching between account and guest keeps it.
+  const needsInvite = $derived(mode !== "login");
   $effect(() => {
     const code = inviteCode;
     preview = null;
     previewError = null;
-    if (mode !== "register" || !code || app.pickServer) return;
+    if (!needsInvite || !code || app.pickServer) return;
     const ctl = new AbortController();
     const timer = setTimeout(() => {
       api
@@ -170,6 +175,13 @@
         .then((p) => {
           preview = p;
           if (p.signup === false) previewError = terr("signup_restricted");
+          // A guest invite opens with the shortest way in: just a name.
+          if (p.guest && mode === "register" && guestOffered !== code) {
+            guestOffered = code;
+            mode = "guest";
+          } else if (!p.guest && mode === "guest") {
+            mode = "register";
+          }
         })
         .catch((e: unknown) => {
           if (e instanceof ApiError) previewError = terr(e.code);
@@ -196,15 +208,13 @@
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     error = null;
-    if (mode === "register") {
-      if (!inviteCode) {
-        error = terr("invite_invalid");
-        return;
-      }
-      if (password !== password2) {
-        error = t("auth.passwordMismatch");
-        return;
-      }
+    if (mode !== "login" && !inviteCode) {
+      error = terr("invite_invalid");
+      return;
+    }
+    if (mode === "register" && password !== password2) {
+      error = t("auth.passwordMismatch");
+      return;
     }
     busy = true;
     try {
@@ -218,6 +228,14 @@
           deviceName: deviceName(),
           devicePublicKey: pub,
           deviceId: dev && dev.publicKey === pub ? dev.deviceId : undefined,
+        });
+        await app.completeAuth(res.token, res.user, res.device.id, pub);
+      } else if (mode === "guest") {
+        const res = await api.guest({
+          inviteCode: inviteCode!,
+          displayName: displayName.trim(),
+          deviceName: deviceName(),
+          devicePublicKey: pub,
         });
         await app.completeAuth(res.token, res.user, res.device.id, pub);
       } else {
@@ -240,7 +258,7 @@
     }
   }
 
-  function switchMode(m: "login" | "register") {
+  function switchMode(m: Mode) {
     mode = m;
     error = null;
     queueMicrotask(() => firstField?.focus());
@@ -326,9 +344,15 @@
     {:else}
       <form class="card" onsubmit={submit} novalidate>
         {@render logo()}
-        <h1>{mode === "login" ? t("auth.welcome") : t("auth.register")}</h1>
+        <h1>
+          {mode === "login"
+            ? t("auth.welcome")
+            : mode === "guest"
+              ? t("auth.guestTitle")
+              : t("auth.register")}
+        </h1>
         <p class="sub">
-          {#if mode === "register" && preview}
+          {#if mode !== "login" && preview}
             {preview.space ? t("auth.inviteFor", { space: preview.space.name }) : t("auth.inviteGeneric")}
             {#if preview.space}<span class="muted"
                 >· {tp("auth.inviteMembers", preview.space.memberCount)}</span
@@ -347,7 +371,7 @@
           {/if}
         </div>
 
-        {#if mode === "register"}
+        {#if mode !== "login"}
           <TextField
             label={t("auth.invite")}
             placeholder={t("auth.invitePlaceholder")}
@@ -377,6 +401,15 @@
             spellcheck="false"
             required
           />
+        {:else if mode === "guest"}
+          <TextField
+            label={t("auth.guestName")}
+            bind:value={displayName}
+            hint={t("auth.guestHint")}
+            autocomplete="nickname"
+            maxlength={32}
+            required
+          />
         {:else}
           <TextField
             label={t("auth.username")}
@@ -394,14 +427,16 @@
             maxlength={32}
           />
         {/if}
-        <TextField
-          label={t("auth.password")}
-          type="password"
-          bind:value={password}
-          hint={mode === "register" ? t("auth.passwordHint") : undefined}
-          autocomplete={mode === "login" ? "current-password" : "new-password"}
-          required
-        />
+        {#if mode !== "guest"}
+          <TextField
+            label={t("auth.password")}
+            type="password"
+            bind:value={password}
+            hint={mode === "register" ? t("auth.passwordHint") : undefined}
+            autocomplete={mode === "login" ? "current-password" : "new-password"}
+            required
+          />
+        {/if}
         {#if mode === "register"}
           <TextField
             label={t("auth.passwordRepeat")}
@@ -420,12 +455,19 @@
           size="lg"
           wide
           {busy}
-          disabled={!username ||
-            !password ||
-            (mode === "register" && (!inviteCode || preview?.signup === false))}
+          disabled={mode === "guest"
+            ? !displayName.trim() || !inviteCode || !preview?.guest
+            : !username || !password || (mode === "register" && (!inviteCode || preview?.signup === false))}
         >
-          {mode === "login" ? t("auth.login") : t("auth.register")}
+          {mode === "login" ? t("auth.login") : mode === "guest" ? t("auth.guestTitle") : t("auth.register")}
         </Button>
+        {#if mode === "register" && preview?.guest}
+          <Button variant="plain" wide onclick={() => switchMode("guest")}>{t("auth.guestInstead")}</Button>
+        {:else if mode === "guest"}
+          <Button variant="plain" wide onclick={() => switchMode("register")}
+            >{t("auth.registerInstead")}</Button
+          >
+        {/if}
         <Button variant="plain" wide onclick={() => switchMode(mode === "login" ? "register" : "login")}>
           {mode === "login" ? t("auth.haveInvite") : t("auth.haveAccount")}
         </Button>

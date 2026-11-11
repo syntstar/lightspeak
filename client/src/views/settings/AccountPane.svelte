@@ -1,7 +1,8 @@
 <script lang="ts">
   // Settings → My account: profile (avatar, display name, username), server,
   // password change, the list of signed-in sessions and
-  // deleting the account.
+  // deleting the account. Guests only see what applies to them: name,
+  // avatar and ending their guest access.
   import { isWeb } from "../../lib/native";
   import { onMount } from "svelte";
   import type { ID } from "../../lib/api/types";
@@ -137,6 +138,11 @@
     }
   }
 
+  /** Signing out ends a guest for good, so ask first. */
+  function endGuest() {
+    if (confirm(t("account.guestEndConfirm"))) void app.logout();
+  }
+
   function openPassword() {
     pwOld = pwNew = pwRepeat = "";
     pwRevoke = true;
@@ -236,7 +242,7 @@
       />
       <div class="pinfo">
         <div class="pname">{app.me.displayName}</div>
-        <div class="muted">@{app.me.username}</div>
+        <div class="muted">{app.me.guest ? t("members.guest") : `@${app.me.username}`}</div>
       </div>
       <span class="spacer"></span>
       <input
@@ -256,20 +262,22 @@
   </div>
 
   <form class="group form" onsubmit={saveProfile}>
-    <div class="fields">
+    <div class="fields" class:single={app.me.guest}>
       <TextField
         label={t("account.displayName")}
         bind:value={displayName}
         maxlength={32}
         autocomplete="nickname"
       />
-      <TextField
-        label={t("account.username")}
-        bind:value={username}
-        maxlength={32}
-        autocomplete="username"
-        hint={t("account.usernameHint")}
-      />
+      {#if !app.me.guest}
+        <TextField
+          label={t("account.username")}
+          bind:value={username}
+          maxlength={32}
+          autocomplete="username"
+          hint={t("account.usernameHint")}
+        />
+      {/if}
     </div>
     {#if profileError}<p class="err" role="alert">{profileError}</p>{/if}
     <div class="actions">
@@ -305,17 +313,27 @@
         >
       {/if}
     </div>
-    <div class="row">
-      <span class="two">
-        {t("account.password")}
-        <small>{t("account.passwordHint")}</small>
-      </span>
-      <Button onclick={openPassword}>{t("account.pwChange")}</Button>
-    </div>
-    <div class="row">
-      <span>{t("settings.loggedInAs", { name: app.me.username })}</span>
-      <Button variant="danger" onclick={() => void app.logout()}>{t("settings.logout")}</Button>
-    </div>
+    {#if app.me.guest}
+      <div class="row">
+        <span class="two">
+          {t("account.guest")}
+          <small>{t("account.guestHint")}</small>
+        </span>
+        <Button variant="danger" onclick={endGuest}>{t("account.guestEnd")}</Button>
+      </div>
+    {:else}
+      <div class="row">
+        <span class="two">
+          {t("account.password")}
+          <small>{t("account.passwordHint")}</small>
+        </span>
+        <Button onclick={openPassword}>{t("account.pwChange")}</Button>
+      </div>
+      <div class="row">
+        <span>{t("settings.loggedInAs", { name: app.me.username })}</span>
+        <Button variant="danger" onclick={() => void app.logout()}>{t("settings.logout")}</Button>
+      </div>
+    {/if}
   </div>
   <p class="note">{t("server.switchNote")}</p>
 
@@ -364,15 +382,17 @@
     {/if}
   </div>
 
-  <div class="group danger-zone">
-    <div class="row">
-      <span class="two">
-        {t("account.delete")}
-        <small>{t("account.deleteHint")}</small>
-      </span>
-      <Button variant="danger" onclick={openDelete}>{t("account.delete")}</Button>
+  {#if !app.me.guest}
+    <div class="group danger-zone">
+      <div class="row">
+        <span class="two">
+          {t("account.delete")}
+          <small>{t("account.deleteHint")}</small>
+        </span>
+        <Button variant="danger" onclick={openDelete}>{t("account.delete")}</Button>
+      </div>
     </div>
-  </div>
+  {/if}
 
   <Sheet bind:open={delOpen} title={t("account.deleteTitle")} width={420}>
     <form class="pw" id="del-form" onsubmit={deleteAccount}>
@@ -471,6 +491,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  .fields.single {
+    grid-template-columns: 1fr;
   }
   .actions {
     display: flex;

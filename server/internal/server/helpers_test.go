@@ -47,7 +47,7 @@ func newEnv(t *testing.T) *testEnv {
 		t.Fatal(err)
 	}
 	s := New(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s.lim = limits{login: generous(), register: generous(), upload: generous(), messages: generous(), ws: generous(), invitePreview: generous(), general: generous()}
+	s.lim = limits{login: generous(), register: generous(), guest: generous(), upload: generous(), messages: generous(), ws: generous(), invitePreview: generous(), general: generous()}
 	ts := httptest.NewServer(s.Router())
 	t.Cleanup(func() {
 		ts.Close()

@@ -86,7 +86,7 @@ Others on the same network **cannot** connect this way (no HTTPS). Use one of th
 | `invite` | with any invite, including those of space admins |
 | `closed` | nobody (only the owner invite from `bootstrap`) |
 
-Invites to a space always work for people who already have an account on the server. To change it: edit `LS_SIGNUP` in `/etc/lightspeak/server.env` and run `sudo systemctl restart lightspeak-server`.
+Invites to a space always work for people who already have an account on the server. Guest access (an invite that lets people in with just a name, see the [admin guide](ADMIN_GUIDE.md#in-the-app)) counts as creating an account: it works for exactly the invites that could also create one. To change it: edit `LS_SIGNUP` in `/etc/lightspeak/server.env` and run `sudo systemctl restart lightspeak-server`.
 
 ## Invites (`LS_INVITES`)
 
