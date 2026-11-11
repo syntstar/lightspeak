@@ -1,0 +1,174 @@
+/* Design tokens. Components use only these variables,
+   never raw colour values. The theme is set on <html data-theme> by
+   lib/theme.ts (system/light/dark), the accent via <html data-accent>. */
+:root {
+  --font-sans: "Inter Variable", "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+  --font-emoji: "Segoe UI Emoji";
+  --font-caption-icons: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  --fs-caption: 11px;
+  --fs-callout: 12px;
+  --fs-body: 13px;
+  --fs-headline: 13px;
+  --fs-title3: 15px;
+  --fs-title2: 17px;
+  --fs-title1: 22px;
+  --fs-large: 26px;
+  --fs-chat: 14px; /* adjustable via settings (12-16) */
+  --lh-body: 1.38;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --r-squircle: 12px;
+  --r-full: 999px;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+
+  --rail-w: 64px;
+  --sidebar-w: 248px;
+  --members-w: 240px;
+  --titlebar-h: 40px;
+
+  --accent: #0a84ff;
+  --on-accent: #ffffff;
+  --success: #30d158;
+  --warning: #ff9f0a;
+  --danger: #ff453a;
+  --live: #ff3b30;
+  --caption-close: #c42b1c;
+  --status-online: #30d158;
+  --status-idle: #ff9f0a;
+  --status-dnd: #ff453a;
+  --status-offline: #8e8e93;
+}
+
+:root[data-accent="purple"] {
+  --accent: #bf5af2;
+}
+:root[data-accent="pink"] {
+  --accent: #ff375f;
+}
+:root[data-accent="orange"] {
+  --accent: #ff9f0a;
+  --on-accent: #1c1c1e;
+}
+:root[data-accent="green"] {
+  --accent: #30d158;
+  --on-accent: #1c1c1e;
+}
+:root[data-accent="graphite"] {
+  --accent: #8e8e93;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-window: #1c1c1e;
+  --bg-sidebar: rgba(30, 30, 32, 0.72);
+  --bg-sidebar-solid: #232325;
+  --bg-rail: rgba(20, 20, 22, 0.6);
+  --bg-content: #1e1e20;
+  --bg-elevated: #2c2c2e;
+  --bg-input: rgba(255, 255, 255, 0.06);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
+  --bg-selected: color-mix(in srgb, var(--accent) 22%, transparent);
+  --bg-overlay: rgba(0, 0, 0, 0.45);
+  --text-1: rgba(255, 255, 255, 0.92);
+  --text-2: rgba(255, 255, 255, 0.6);
+  /* ≥ 4.5:1 on all dark surfaces (6.3 contrast audit). */
+  --text-3: rgba(255, 255, 255, 0.5);
+  --accent-text: color-mix(in srgb, var(--accent) 82%, white);
+  --success-text: var(--success);
+  --separator: rgba(255, 255, 255, 0.09);
+  --border-hairline: rgba(255, 255, 255, 0.12);
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  --shadow-sheet: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  --toggle-off: rgba(255, 255, 255, 0.16);
+  --knob: #f2f2f7;
+  /* Code syntax colours (Xcode dark), all ≥ 4.6:1 on the code block background. */
+  --syn-keyword: #fc5fa3;
+  --syn-string: #fc6a5d;
+  --syn-number: #d0bf69;
+  --syn-comment: #8a96a3;
+  --syn-title: #67b7a4;
+  --syn-type: #5dd8ff;
+  --syn-attr: #8fc6e0;
+  --syn-meta: #fd8f3f;
+  --syn-add: #30d158;
+  --syn-del: #ff6961;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-window: #f5f5f7;
+  --bg-sidebar: rgba(242, 242, 247, 0.72);
+  --bg-sidebar-solid: #ececf0;
+  --bg-rail: rgba(232, 232, 237, 0.6);
+  --bg-content: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-input: rgba(0, 0, 0, 0.04);
+  --bg-hover: rgba(0, 0, 0, 0.045);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --bg-selected: color-mix(in srgb, var(--accent) 16%, transparent);
+  --bg-overlay: rgba(0, 0, 0, 0.22);
+  --text-1: rgba(0, 0, 0, 0.88);
+  --text-2: rgba(0, 0, 0, 0.62);
+  /* ≥ 4.5:1 on white and the sidebar grey (6.3 contrast audit). */
+  --text-3: rgba(0, 0, 0, 0.56);
+  --accent-text: color-mix(in srgb, var(--accent) 62%, black);
+  --success-text: #1f7a36;
+  --separator: rgba(0, 0, 0, 0.09);
+  --border-hairline: rgba(0, 0, 0, 0.1);
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+  --shadow-sheet: 0 24px 60px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+  --toggle-off: rgba(0, 0, 0, 0.12);
+  --knob: #ffffff;
+  /* Code syntax colours (Xcode light), all ≥ 4.9:1 on the code block background. */
+  --syn-keyword: #9b2393;
+  --syn-string: #c41a16;
+  --syn-number: #1c00cf;
+  --syn-comment: #5d6c79;
+  --syn-title: #326d74;
+  --syn-type: #0b4f79;
+  --syn-attr: #3e6d84;
+  --syn-meta: #8a4b14;
+  --syn-add: #1f7a36;
+  --syn-del: #c4261d;
+}
+:root[data-theme="light"]:not([data-accent]) {
+  --accent: #007aff;
+}
+
+/* Mica off (setting) or unsupported: opaque sidebar. */
+:root[data-mica="off"] {
+  --bg-sidebar: var(--bg-sidebar-solid);
+  --bg-rail: var(--bg-sidebar-solid);
+}
+
+:root[data-motion="reduced"] {
+  --dur-fast: 0ms;
+  --dur-base: 0ms;
+  --dur-slow: 0ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}

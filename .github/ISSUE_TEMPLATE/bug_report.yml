@@ -1,0 +1,58 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time! Please do not report security problems here – see the security policy.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Join a voice channel
+        2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Where does it happen?
+      options:
+        - Windows app
+        - Browser client
+        - Server
+        - Installer / updates (server)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "App: Settings → About. Server: lightspeak-server version"
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Windows version or browser; for server problems the Linux distribution and architecture
+      placeholder: Windows 11 24H2 / Debian 12 arm64
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic report or logs
+      description: |
+        App: Settings → About → Diagnostics → Export (contains no passwords or message contents – have a quick look before you attach it).
+        Server: sudo journalctl -u lightspeak-server -n 200 --no-pager
+      render: text

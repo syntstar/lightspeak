@@ -1,0 +1,45 @@
+# Local / secrets
+*.local.env
+*.local.*
+.env
+.env.*
+server.env
+livekit.env
+*.key
+*.pem
+*.p12
+*.pfx
+updater.key*
+secrets/
+
+# Client
+client/node_modules/
+client/dist/
+client/src-tauri/target/
+client/src-tauri/gen/schemas/
+
+# Server
+server/dev-data/
+server/bin/
+*.db
+*.db-wal
+*.db-shm
+
+# Build artefacts / measurements
+dist/
+build/
+scripts/results/
+*.log
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.claude/
+
+# Browser client build
+client/dist-web/

@@ -1,0 +1,65 @@
+[package]
+name = "lightspeak"
+version = "1.0.0"
+description = "Lightspeak – self-hosted voice chat, text chat and screen sharing"
+authors = ["Lightspeak contributors"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/syntstar/lightspeak"
+edition = "2024"
+publish = false
+default-run = "lightspeak"
+
+[lib]
+name = "lightspeak_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+tauri-plugin-opener = "2.7.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+tauri-plugin-single-instance = "2.5.5"
+crypto_box = { version = "0.9.1", features = ["seal", "std"] }
+# Windows TLS (schannel) instead of rustls; no zip (NSIS updates are .exe) – ~0.7 MB smaller
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["native-tls", "system-proxy"] }
+
+[target.'cfg(windows)'.dependencies]
+wasapi = "0.26.0"
+webview2-com = "0.39.1"
+# Same crate `windows` uses; the COM `#[implement]` macro needs it by name (audio/branding.rs).
+windows-core = "0.62.2"
+windows = { version = "0.62.2", features = [
+  "Data_Xml_Dom",
+  "UI_Notifications",
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_UI_Shell",
+  "Win32_Security",
+  "Win32_Security_Credentials",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Threading",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2
