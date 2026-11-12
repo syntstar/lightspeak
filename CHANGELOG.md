@@ -15,6 +15,7 @@ All notable changes to Lightspeak are documented here. The format follows [Keep 
 
 - Bounded queued password/image work and added cancellation and request-body read deadlines.
 - Updated minimatch to 11.0.1 and added mandatory dependency checks to CI and complete release builds.
+- Removed local builder profile paths from release executables.
 - Safety numbers now hash the entire public key with SHA-256. Existing device keys and encrypted media remain compatible, but displayed numbers change; compare numbers using updated clients on both sides.
 
 ## 1.1.0

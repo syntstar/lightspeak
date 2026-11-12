@@ -174,7 +174,19 @@ if (-not $SkipServer) {
 if (-not $SkipClient) {
   Step 'Windows installer (NSIS)'
   $signed = Test-Path (Join-Path $client 'src-tauri/updater.pub')
+  $savedEncodedRustFlags = $env:CARGO_ENCODED_RUSTFLAGS
   try {
+    # Panic locations can survive symbol stripping. Never ship the builder's
+    # profile path in the executable. Preserve Cargo's existing flag semantics.
+    $rustFlags = @()
+    if ($env:CARGO_ENCODED_RUSTFLAGS) {
+      $rustFlags = @($env:CARGO_ENCODED_RUSTFLAGS -split [char]31)
+    } elseif ($env:RUSTFLAGS) {
+      $rustFlags = @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ })
+    }
+    $rustFlags += "--remap-path-prefix=$($env:USERPROFILE)=/build/user"
+    $rustFlags += "--remap-path-prefix=$($env:USERPROFILE.Replace('\', '/'))=/build/user"
+    $env:CARGO_ENCODED_RUSTFLAGS = $rustFlags -join [char]31
     if ($signed) {
       # build.rs embeds updater.pub; a fresh mtime forces it to re-run, so a
       # key compiled in by an earlier (e.g. test) build can never ship.
@@ -201,6 +213,7 @@ if (-not $SkipClient) {
       Run $client { npm run tauri build }
     }
   } finally {
+    $env:CARGO_ENCODED_RUSTFLAGS = $savedEncodedRustFlags
     Remove-Item (Join-Path $out 'SHA256SUMS.sig') -ErrorAction SilentlyContinue
   }
   $nsis = Join-Path $client "src-tauri/target/release/bundle/nsis/Lightspeak_${ver}_x64-setup.exe"
