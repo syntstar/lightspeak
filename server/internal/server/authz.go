@@ -140,25 +140,37 @@ func (s *Server) requireTextChannel(ctx context.Context, se *Session, channelID 
 // containerAccess: caller must be a member of the space or DM (E2EE container).
 // Returns whether the container is a DM and its current epoch.
 func (s *Server) containerAccess(ctx context.Context, se *Session, cid int64) (isDM bool, epoch int64, err error) {
-	err = s.db.R.QueryRowContext(ctx, `SELECT e2ee_epoch FROM spaces WHERE id=?`, cid).Scan(&epoch)
+	return containerAccessQuery(ctx, s.db.R, se, cid)
+}
+
+// containerAccessQuery also works inside the write transaction that stores keys.
+func containerAccessQuery(ctx context.Context, q querier, se *Session, cid int64) (bool, int64, error) {
+	var epoch int64
+	err := q.QueryRowContext(ctx, `SELECT e2ee_epoch FROM spaces WHERE id=? AND EXISTS (SELECT 1 FROM space_members WHERE space_id=spaces.id AND user_id=?)`, cid, se.UserID).Scan(&epoch)
 	if err == nil {
-		var n int
-		if err = s.db.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM space_members WHERE space_id=? AND user_id=?`, cid, se.UserID).Scan(&n); err != nil {
-			return
-		}
-		if n == 0 {
-			err = notFound("unknown_container")
-		}
-		return false, epoch, err
+		return false, epoch, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return
+		return false, 0, err
 	}
-	c, _, err := s.channelAccess(ctx, se, cid)
-	if err != nil || !c.isDM() {
+	err = q.QueryRowContext(ctx, `SELECT e2ee_epoch FROM channels WHERE id=? AND kind IN ('dm','group_dm') AND EXISTS (SELECT 1 FROM channel_members WHERE channel_id=channels.id AND user_id=?)`, cid, se.UserID).Scan(&epoch)
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, 0, notFound("unknown_container")
 	}
-	return true, c.E2EEEpoch, nil
+	return true, epoch, err
+}
+
+// requireKeySession rejects a session/device revoked after HTTP authentication.
+func requireKeySession(ctx context.Context, q querier, se *Session, now int64) error {
+	var n int
+	err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions s JOIN users u ON u.id=s.user_id JOIN devices d ON d.id=s.device_id WHERE s.id=? AND s.user_id=? AND d.id=? AND d.user_id=u.id AND s.revoked_at IS NULL AND s.expires_at>? AND u.disabled_at IS NULL AND d.revoked_at IS NULL AND d.public_key IS NOT NULL`, se.ID, se.UserID, se.DeviceID, now).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return errUnauthorized
+	}
+	return nil
 }
 
 // containerMembers lists user IDs that belong to an E2EE container.

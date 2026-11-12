@@ -166,10 +166,7 @@ async fn check_and_install(app: &AppHandle, meta: &Cached, abandoned: &AtomicBoo
 }
 
 #[tauri::command]
-pub async fn update_check(
-    app: AppHandle,
-    pending: State<'_, PendingUpdate>,
-) -> Result<Option<UpdateInfo>, String> {
+pub async fn update_check(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<Option<UpdateInfo>, String> {
     let update = updater(&app, Duration::from_secs(30))?.check().await.map_err(|e| e.to_string())?;
     let info = update.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),

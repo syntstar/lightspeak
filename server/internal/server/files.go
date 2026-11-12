@@ -35,6 +35,7 @@ import (
 	_ "golang.org/x/image/webp" // register decoder
 
 	"github.com/syntstar/lightspeak/server/internal/store"
+	"github.com/syntstar/lightspeak/server/internal/worklimit"
 )
 
 const (
@@ -47,9 +48,9 @@ const (
 	maxAvatarBytes = 5 << 20
 )
 
-// decodeSem lets only one image decode run at a time, so parallel uploads
+// decodeLimit lets only one image decode run at a time, so parallel uploads
 // cannot add up to more than maxDecodeBytes.
-var decodeSem = make(chan struct{}, 1)
+var decodeLimit = worklimit.New(1, 8)
 
 // decodable rejects images whose decoded form would be too large.
 func decodable(cfg image.Config) bool {
@@ -222,12 +223,12 @@ func (f *Files) used(ctx context.Context) (int64, error) {
 }
 
 func (f *Files) reserve(ctx context.Context, size int64) (func(), error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	used, err := f.used(ctx)
 	if err != nil {
 		return nil, err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	if used+f.reserved+size > f.s.cfg.QuotaBytes {
 		return nil, errf(http.StatusInsufficientStorage, "quota_exceeded", "storage quota exceeded")
 	}
@@ -349,7 +350,7 @@ func (f *Files) upload(w http.ResponseWriter, r *http.Request) error {
 	var width, height any
 	var thumbKey any
 	if strings.HasPrefix(mt, "image/") {
-		if tw, th, tk, err := f.makeThumb(tmpName, mt); err == nil {
+		if tw, th, tk, err := f.makeThumb(r.Context(), tmpName, mt); err == nil {
 			width, height = tw, th
 			if tk != "" {
 				thumbKey = tk
@@ -393,7 +394,7 @@ func isActiveType(mt string) bool {
 // makeThumb decodes the image header (pixel limit against decompression
 // bombs) and writes a ≤800 px thumbnail when the image is larger or not a
 // cheap format to display. Returns the original dimensions.
-func (f *Files) makeThumb(path, mt string) (int, int, string, error) {
+func (f *Files) makeThumb(ctx context.Context, path, mt string) (int, int, string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, "", err
@@ -413,8 +414,11 @@ func (f *Files) makeThumb(path, mt string) (int, int, string, error) {
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return 0, 0, "", err
 	}
-	decodeSem <- struct{}{}
-	defer func() { <-decodeSem }()
+	release, err := decodeLimit.Acquire(ctx)
+	if err != nil {
+		return 0, 0, "", err
+	}
+	defer release()
 	img, _, err := image.Decode(bufio.NewReader(file))
 	if err != nil {
 		return 0, 0, "", err
@@ -575,6 +579,11 @@ func (f *Files) serveAvatar(w http.ResponseWriter, r *http.Request) error {
 // processAvatar decodes an uploaded image, center-crops it square, scales to
 // 256 px and stores it under a random key.
 func (f *Files) processAvatar(r *http.Request) (string, error) {
+	release, err := decodeLimit.Acquire(r.Context())
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	if r.ContentLength > maxAvatarBytes {
 		return "", errf(http.StatusRequestEntityTooLarge, "file_too_large", "image too large")
 	}
@@ -589,8 +598,6 @@ func (f *Files) processAvatar(r *http.Request) (string, error) {
 	if err != nil || !decodable(cfg) {
 		return "", badRequest("invalid_image")
 	}
-	decodeSem <- struct{}{}
-	defer func() { <-decodeSem }()
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", badRequest("invalid_image")
@@ -763,7 +770,14 @@ func (f *Files) purgeOlderThan(ctx context.Context, age time.Duration) (int, err
 
 // PurgeAttachmentsOlderThan is used by the admin CLI.
 func (s *Server) PurgeAttachmentsOlderThan(ctx context.Context, days int) (int, error) {
-	return s.files.purgeOlderThan(ctx, time.Duration(days)*24*time.Hour)
+	total := 0
+	for {
+		n, err := s.files.purgeOlderThan(ctx, time.Duration(days)*24*time.Hour)
+		total += n
+		if err != nil || n < 1000 {
+			return total, err
+		}
+	}
 }
 
 type StorageReport struct {

@@ -216,6 +216,14 @@ func (s *Server) createSpace(w http.ResponseWriter, r *http.Request) error {
 	}
 	id, now := store.NewID(), s.nowMs()
 	err := s.db.Tx(ctx, func(tx *sql.Tx) error {
+		var active int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id=? AND disabled_at IS NULL AND is_guest=0`, se.UserID).Scan(&active); err != nil {
+			return err
+		}
+		if active != 1 {
+			return errUnauthorized
+		}
+
 		// Regular users own at most LS_MAX_SPACES spaces; server admins are
 		// exempt. Counted inside the write transaction so parallel requests
 		// cannot exceed the limit.

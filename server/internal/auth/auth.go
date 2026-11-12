@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/syntstar/lightspeak/server/internal/worklimit"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -30,29 +32,42 @@ const (
 
 var ErrMismatch = errors.New("password mismatch")
 
-// hashSem bounds concurrent argon2id runs (each needs MemoryKiB of RAM), so a
-// burst of logins queues instead of exhausting the service memory limit.
-var hashSem = make(chan struct{}, 2)
+var hashLimit = worklimit.New(2, 16)
 
-func idKey(pw, salt []byte, t, m uint32, p uint8, n uint32) []byte {
-	hashSem <- struct{}{}
-	defer func() { <-hashSem }()
-	return argon2.IDKey(pw, salt, t, m, p, n)
+func idKey(ctx context.Context, pw, salt []byte, t, m uint32, p uint8, n uint32) ([]byte, error) {
+	release, err := hashLimit.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	key := argon2.IDKey(pw, salt, t, m, p, n)
+	return key, ctx.Err()
 }
 
 // Hash returns an encoded argon2id hash ($argon2id$v=19$m=..,t=..,p=..$salt$key).
 func Hash(password string, p Params) (string, error) {
+	return HashContext(context.Background(), password, p)
+}
+
+func HashContext(ctx context.Context, password string, p Params) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key := idKey([]byte(password), salt, p.Time, p.MemoryKiB, p.Threads, keyLen)
+	key, err := idKey(ctx, []byte(password), salt, p.Time, p.MemoryKiB, p.Threads, keyLen)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, p.MemoryKiB, p.Time, p.Threads,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key)), nil
 }
 
 // Verify checks password against an encoded hash in constant time.
 func Verify(password, encoded string) error {
+	return VerifyContext(context.Background(), password, encoded)
+}
+
+func VerifyContext(ctx context.Context, password, encoded string) error {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return errors.New("unsupported hash")
@@ -73,24 +88,23 @@ func Verify(password, encoded string) error {
 	if err != nil {
 		return err
 	}
-	got := idKey([]byte(password), salt, p.Time, p.MemoryKiB, p.Threads, uint32(len(want)))
+	got, err := idKey(ctx, []byte(password), salt, p.Time, p.MemoryKiB, p.Threads, uint32(len(want)))
+	if err != nil {
+		return err
+	}
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return ErrMismatch
 	}
 	return nil
 }
 
-var (
-	dummyOnce sync.Once
-	dummyHash string
-)
-
-// VerifyDummy burns the same time as a real verification; used for unknown
-// usernames so response time does not reveal whether an account exists.
-func VerifyDummy(p Params) {
-	dummyOnce.Do(func() { dummyHash, _ = Hash("lightspeak-dummy-password", p) })
-	_ = Verify("not-the-password", dummyHash)
+// VerifyDummyContext performs the same bounded work for unknown users. The
+// dummy salt and expected key are public; no real credential is involved.
+func VerifyDummyContext(ctx context.Context, p Params) error {
+	_, err := idKey(ctx, []byte("not-the-password"), make([]byte, saltLen), p.Time, p.MemoryKiB, p.Threads, keyLen)
+	return err
 }
+func VerifyDummy(p Params) { _ = VerifyDummyContext(context.Background(), p) }
 
 // NewToken returns a 256-bit random session token (base64url) and its SHA-256.
 func NewToken() (token string, hash []byte, err error) {
@@ -160,4 +174,9 @@ func ValidUsername(u string) bool {
 		}
 	}
 	return true
+}
+
+// WorkUnavailable distinguishes admission/cancellation from a credential mismatch.
+func WorkUnavailable(err error) bool {
+	return errors.Is(err, worklimit.ErrBusy) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

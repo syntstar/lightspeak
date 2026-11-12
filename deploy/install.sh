@@ -208,13 +208,15 @@ activate_release() {
   chown -hR "$(stat -c %U:%G "$APP_DIR/releases")" "$dir"
   switch_release "releases/$NEW_VER"
   say "Starting server $NEW_VER"
-  restart_server
-  if ! healthy; then
+  if ! restart_server || ! healthy; then
     journalctl -u lightspeak-server -n 15 --no-pager >&2 || true
     if [[ -n "$prev" && "$prev" != "releases/$NEW_VER" && -e "$APP_DIR/$prev/lightspeak-server" ]]; then
       switch_release "$prev"
-      restart_server
-      healthy && warn "Rolled back to $prev." || warn "Rollback to $prev is not healthy either!"
+      if restart_server && healthy; then
+        warn "Rolled back binaries to $prev; database migrations were NOT undone."
+      else
+        warn "Rollback to $prev is not healthy either! Database recovery may be required."
+      fi
       rm -rf "$dir"
       warn "A database backup from before the update is in $DATA/backups."
     fi

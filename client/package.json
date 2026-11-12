@@ -1,7 +1,7 @@
 {
   "name": "lightspeak-client",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Lightspeak – self-hosted voice chat, text chat and screen sharing",
   "license": "AGPL-3.0-only",
   "repository": "github:syntstar/lightspeak",
@@ -43,5 +43,8 @@
     "typescript-eslint": "8.72.1",
     "vite": "8.3.6",
     "vitest": "5.1.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
   }
 }

@@ -74,10 +74,11 @@ pub fn fingerprint(public_key_b64: &str) -> Result<String, String> {
     if pk.len() != 32 {
         return Err("public_key_invalid".into());
     }
-    // Digits grouped like Signal safety numbers: 12 groups of 5 from the key
-    // bytes, reduced mod 100000. Deterministic and readable.
+    // Hash the entire key before formatting six decimal groups.
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(&pk);
     let mut out = String::new();
-    for (i, chunk) in pk.chunks(5).take(6).enumerate() {
+    for (i, chunk) in digest.chunks(5).take(6).enumerate() {
         let mut n: u64 = 0;
         for b in chunk {
             n = (n << 8) | *b as u64;
@@ -117,7 +118,7 @@ mod js_interop {
 
     const PKA: &str = "e06Qm75//kTEZaIgA31gjuNYl9Me+XLwf3SJLLD3PxM=";
     const PKB: &str = "D6poTtKIZ7l/Smot7l34zpdOdrcBjj8iocTPJnhXDyA=";
-    const FPA: &str = "77310 66181 01568 90099 78335 13815";
+    const FPA: &str = "20162 67363 53482 80223 31257 21658";
     /// Sealed by the browser client (WebCrypto X25519 + @noble) for B.
     const CT_JS_FOR_B: &str =
         "Ogcd1c038Fc1yebP4PghH9U/UTIR8fYJapSgu74yYEgax+irYoNw8nPot+XAAoGSwDoH+RTeTdNrjzJ/3RNWGvUY8FXrLt8DDiyzpXSMrkU=";

@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { b64, fingerprint, generateDeviceKey, open, rawPublicKey, seal, unb64 } from "./sealedBox";
 
+it("fingerprints include the last two public-key bytes", () => {
+  const first = new Uint8Array(32).fill(17);
+  const changed = first.slice();
+  changed[31] = changed[31]! ^ 1;
+  expect(fingerprint(changed)).not.toBe(fingerprint(first));
+});
+
 // Vectors shared with client/src-tauri/src/crypto.rs (tests::js_interop):
 // secret keys are 32 × 0x11 (A) and 32 × 0x22 (B), the media key 32 × 0x42.
 const PKA = "e06Qm75//kTEZaIgA31gjuNYl9Me+XLwf3SJLLD3PxM=";
 const PKB = "D6poTtKIZ7l/Smot7l34zpdOdrcBjj8iocTPJnhXDyA=";
-const FPA = "77310 66181 01568 90099 78335 13815";
+const FPA = "20162 67363 53482 80223 31257 21658";
 /** Sealed by Rust (crypto_box 0.9) for A. */
 const CT_RUST_FOR_A =
   "/7sf0rG6xjC0PIth8gutqKyZZ2fPlyFRRhilQpXkghVx4dT8lMVHmBSm7uC0YAMBJVV9f9RdJVjra1MEQ3gP1hS6+WxHLW1pFGkaV7jw9g0=";

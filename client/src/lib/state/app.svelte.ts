@@ -101,6 +101,11 @@ class AppState {
   private gw: Gateway | null = null;
   private session: StoredSession | null = null;
 
+  /** Opaque identity for rejecting asynchronous work from an ended session. */
+  get sessionIdentity(): object | null {
+    return this.session;
+  }
+
   // ---------- derived helpers ----------
 
   get space(): Space | undefined {

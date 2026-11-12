@@ -274,7 +274,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	} else if !ok {
 		return errf(http.StatusForbidden, "signup_restricted", "this invite cannot create new accounts")
 	}
-	hash, err := auth.Hash(req.Password, s.argon)
+	hash, err := auth.HashContext(ctx, req.Password, s.argon)
 	if err != nil {
 		return err
 	}
@@ -360,13 +360,18 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	var disabled sql.NullInt64
 	err = s.db.R.QueryRowContext(ctx, `SELECT id, password_hash, disabled_at FROM users WHERE username=?`, username).Scan(&userID, &hash, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
-		auth.VerifyDummy(s.argon)
+		if err := auth.VerifyDummyContext(ctx, s.argon); err != nil {
+			return err
+		}
 		return errf(http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 	}
 	if err != nil {
 		return err
 	}
-	if auth.Verify(req.Password, hash) != nil {
+	if err := auth.VerifyContext(ctx, req.Password, hash); err != nil {
+		if auth.WorkUnavailable(err) {
+			return err
+		}
 		return errf(http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 	}
 	if disabled.Valid {
@@ -546,13 +551,19 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if err := s.db.R.QueryRowContext(ctx, `SELECT password_hash, username FROM users WHERE id=?`, se.UserID).Scan(&hash, &username); err != nil {
 		return err
 	}
-	if len(req.OldPassword) > 256 || auth.Verify(req.OldPassword, hash) != nil {
+	if len(req.OldPassword) > 256 {
+		return errf(http.StatusForbidden, "wrong_password", "wrong password")
+	}
+	if err := auth.VerifyContext(ctx, req.OldPassword, hash); err != nil {
+		if auth.WorkUnavailable(err) {
+			return err
+		}
 		return errf(http.StatusForbidden, "wrong_password", "wrong password")
 	}
 	if code := auth.CheckPassword(req.NewPassword, username); code != "" {
 		return badRequest(code)
 	}
-	nh, err := auth.Hash(req.NewPassword, s.argon)
+	nh, err := auth.HashContext(ctx, req.NewPassword, s.argon)
 	if err != nil {
 		return err
 	}

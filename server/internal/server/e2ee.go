@@ -99,7 +99,7 @@ type validEnvelope struct {
 
 // validateEnvelopes checks every target device belongs to a current member
 // of the container, is not revoked and has a public key.
-func (s *Server) validateEnvelopes(ctx context.Context, cid int64, isDM bool, in []envelopeIn) ([]validEnvelope, error) {
+func (s *Server) validateEnvelopes(ctx context.Context, q querier, cid int64, isDM bool, in []envelopeIn) ([]validEnvelope, error) {
 	if len(in) == 0 || len(in) > maxEnvelopes {
 		return nil, badRequest("invalid_envelopes")
 	}
@@ -120,8 +120,8 @@ func (s *Server) validateEnvelopes(ctx context.Context, cid int64, isDM bool, in
 			return nil, badRequest("invalid_envelopes")
 		}
 		var owner int64
-		err = s.db.R.QueryRowContext(ctx, `SELECT d.user_id FROM devices d WHERE d.id=? AND d.revoked_at IS NULL AND d.public_key IS NOT NULL
-			AND d.user_id IN (`+memberQ+`)`, id, cid).Scan(&owner)
+		err = q.QueryRowContext(ctx, `SELECT d.user_id FROM devices d WHERE d.id=? AND d.revoked_at IS NULL AND d.public_key IS NOT NULL
+			AND EXISTS (SELECT 1 FROM users u WHERE u.id=d.user_id AND u.disabled_at IS NULL) AND d.user_id IN (`+memberQ+`)`, id, cid).Scan(&owner)
 		if err != nil {
 			return nil, badRequest("invalid_envelope_device")
 		}
@@ -150,12 +150,27 @@ func (s *Server) postEnvelopes(w http.ResponseWriter, r *http.Request) error {
 	if req.Epoch != current {
 		return errf(http.StatusConflict, "epoch_conflict", "epoch changed")
 	}
-	envs, err := s.validateEnvelopes(ctx, cid, isDM, req.Envelopes)
+	envs, err := s.validateEnvelopes(ctx, s.db.R, cid, isDM, req.Envelopes)
 	if err != nil {
 		return err
 	}
 	inserted := 0
 	err = s.db.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireKeySession(ctx, tx, se, s.nowMs()); err != nil {
+			return err
+		}
+		dm, epoch, err := containerAccessQuery(ctx, tx, se, cid)
+		if err != nil {
+			return err
+		}
+		if dm != isDM || epoch != req.Epoch {
+			return conflict("epoch_conflict")
+		}
+		envs, err = s.validateEnvelopes(ctx, tx, cid, isDM, req.Envelopes)
+		if err != nil {
+			return err
+		}
+
 		var total, mine int
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(device_id=?),0) FROM media_key_envelopes WHERE container_id=? AND epoch=?`,
 			se.DeviceID, cid, current).Scan(&total, &mine); err != nil {
@@ -228,7 +243,7 @@ func (s *Server) rotate(w http.ResponseWriter, r *http.Request) error {
 	if req.NewEpoch != current+1 {
 		return errf(http.StatusConflict, "epoch_conflict", "epoch changed")
 	}
-	envs, err := s.validateEnvelopes(ctx, cid, isDM, req.Envelopes)
+	envs, err := s.validateEnvelopes(ctx, s.db.R, cid, isDM, req.Envelopes)
 	if err != nil {
 		return err
 	}
@@ -240,8 +255,29 @@ func (s *Server) rotate(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("missing_own_envelope")
 	}
 	err = s.db.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireKeySession(ctx, tx, se, s.nowMs()); err != nil {
+			return err
+		}
+		dm, epoch, err := containerAccessQuery(ctx, tx, se, cid)
+		if err != nil {
+			return err
+		}
+		if dm != isDM || epoch != req.NewEpoch-1 {
+			return conflict("epoch_conflict")
+		}
+		envs, err = s.validateEnvelopes(ctx, tx, cid, isDM, req.Envelopes)
+		if err != nil {
+			return err
+		}
+		var pending int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key=?`, rotatePendingPref+ID(cid).String()).Scan(&pending); err != nil {
+			return err
+		}
+		if pending != 1 {
+			return conflict("rotation_not_pending")
+		}
+
 		var res sql.Result
-		var err error
 		if isDM {
 			res, err = tx.ExecContext(ctx, `UPDATE channels SET e2ee_epoch=? WHERE id=? AND e2ee_epoch=?`, req.NewEpoch, cid, current)
 		} else {
@@ -294,7 +330,7 @@ func (s *Server) containerDevices(w http.ResponseWriter, r *http.Request) error 
 	}
 	rows, err := s.db.R.QueryContext(ctx, `SELECT d.id, d.user_id, d.public_key,
 		EXISTS(SELECT 1 FROM media_key_envelopes e WHERE e.container_id=? AND e.epoch=? AND e.device_id=d.id)
-		FROM devices d WHERE d.revoked_at IS NULL AND d.public_key IS NOT NULL AND d.user_id IN (`+memberQ+`) ORDER BY d.user_id, d.id`, cid, epoch, cid)
+		FROM devices d WHERE d.revoked_at IS NULL AND d.public_key IS NOT NULL AND EXISTS (SELECT 1 FROM users u WHERE u.id=d.user_id AND u.disabled_at IS NULL) AND d.user_id IN (`+memberQ+`) ORDER BY d.user_id, d.id`, cid, epoch, cid)
 	if err != nil {
 		return err
 	}

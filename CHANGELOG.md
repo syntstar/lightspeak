@@ -2,6 +2,21 @@
 
 All notable changes to Lightspeak are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## 1.1.1
+
+### Fixed
+
+- Isolated media-key caches and pending operations across account/server changes.
+- Rechecked voice recovery permissions and serialized key distribution, account-deletion and ownership invariants.
+- Fixed concurrent upload quota checks and made manual attachment purges drain every batch.
+- Restored the installer rollback path when restarting the new version fails; rollback restores binaries, not database migrations.
+
+### Security
+
+- Bounded queued password/image work and added cancellation and request-body read deadlines.
+- Updated minimatch to 11.0.1 and added mandatory dependency checks to CI and complete release builds.
+- Safety numbers now hash the entire public key with SHA-256. Existing device keys and encrypted media remain compatible, but displayed numbers change; compare numbers using updated clients on both sides.
+
 ## 1.1.0
 
 ### Added

@@ -35,7 +35,13 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) error {
 	if err := s.db.R.QueryRowContext(ctx, `SELECT password_hash, is_server_admin FROM users WHERE id=?`, uid).Scan(&hash, &admin); err != nil {
 		return err
 	}
-	if len(req.Password) > 256 || auth.Verify(req.Password, hash) != nil {
+	if len(req.Password) > 256 {
+		return errf(http.StatusForbidden, "wrong_password", "wrong password")
+	}
+	if err := auth.VerifyContext(ctx, req.Password, hash); err != nil {
+		if auth.WorkUnavailable(err) {
+			return err
+		}
 		return errf(http.StatusForbidden, "wrong_password", "wrong password")
 	}
 	var owned int
@@ -90,6 +96,26 @@ func (s *Server) removeAccount(ctx context.Context, uid int64) error {
 	var sessions []int64
 	now := s.nowMs()
 	err = s.db.Tx(ctx, func(tx *sql.Tx) error {
+		// Serialize these invariants with deletion and ownership transfers.
+		var owned, admin, others int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM spaces WHERE owner_id=?`, uid).Scan(&owned); err != nil {
+			return err
+		}
+		if owned > 0 {
+			return conflict("owns_spaces")
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT is_server_admin FROM users WHERE id=?`, uid).Scan(&admin); err != nil {
+			return err
+		}
+		if admin == 1 {
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE is_server_admin=1 AND id<>? AND disabled_at IS NULL`, uid).Scan(&others); err != nil {
+				return err
+			}
+			if others == 0 {
+				return conflict("last_server_admin")
+			}
+		}
+
 		var err error
 		if sessions, err = queryIDs(ctx, tx, `SELECT id FROM sessions WHERE user_id=? AND revoked_at IS NULL`, uid); err != nil {
 			return err

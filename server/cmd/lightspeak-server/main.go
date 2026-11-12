@@ -174,7 +174,7 @@ func cmdServe(args []string) error {
 	defer srv.Close()
 	srv.Start(ctx)
 
-	api := &http.Server{Addr: cfg.Addr, Handler: srv.Router(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 32 << 10}
+	api := &http.Server{Addr: cfg.Addr, Handler: srv.Router(), ReadTimeout: 10 * time.Minute, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 32 << 10}
 	hook := &http.Server{Addr: cfg.WebhookAddr, Handler: srv.WebhookRouter(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second}
 	errc := make(chan error, 2)
 	go func() { errc <- api.ListenAndServe() }()

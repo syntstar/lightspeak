@@ -10,6 +10,7 @@
 // non-extractable CryptoKey; only the symmetric parts use @noble (audited,
 // dependency-free).
 import { hsalsa, xsalsa20poly1305 } from "@noble/ciphers/salsa.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { blake2b } from "@noble/hashes/blake2.js";
 
 const X25519 = { name: "X25519" } as const;
@@ -115,10 +116,11 @@ export async function open(priv: CryptoKey, pub: Uint8Array, sealed: Uint8Array)
 /** Display fingerprint, identical to `crypto::fingerprint` in Rust. */
 export function fingerprint(pk: Uint8Array): string {
   if (pk.length !== KEY_LEN) throw new Error("public_key_invalid");
+  const digest = sha256(pk);
   const groups: string[] = [];
   for (let i = 0; i < 6; i++) {
     let n = 0;
-    for (const b of pk.subarray(i * 5, i * 5 + 5)) n = n * 256 + b; // 40 bits: exact in a double
+    for (const b of digest.subarray(i * 5, i * 5 + 5)) n = n * 256 + b; // 40 bits: exact in a double
     groups.push(String(n % 100_000).padStart(5, "0"));
   }
   return groups.join(" ");

@@ -1,6 +1,6 @@
 [package]
 name = "lightspeak"
-version = "1.1.0"
+version = "1.1.1"
 description = "Lightspeak – self-hosted voice chat, text chat and screen sharing"
 authors = ["Lightspeak contributors"]
 license = "AGPL-3.0-only"
@@ -21,6 +21,7 @@ tauri = { version = "2.12.5", features = ["tray-icon"] }
 tauri-plugin-opener = "2.7.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10.9"
 base64 = "0.22"
 tauri-plugin-single-instance = "2.5.5"
 crypto_box = { version = "0.9.1", features = ["seal", "std"] }

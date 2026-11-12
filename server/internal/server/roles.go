@@ -622,6 +622,29 @@ func (s *Server) doTransfer(w http.ResponseWriter, r *http.Request, spaceID int6
 		return errGuest // the space would be stuck once the guest is gone
 	}
 	err = s.db.Tx(ctx, func(tx *sql.Tx) error {
+		actor, err := spaceAccess(ctx, tx, spaceID, se.UserID)
+		if err != nil {
+			return err
+		}
+		// Server admins may transfer through the admin route without joining.
+		var admin int
+		if err := tx.QueryRowContext(ctx, `SELECT is_server_admin FROM users WHERE id=? AND disabled_at IS NULL`, se.UserID).Scan(&admin); err != nil {
+			return errUnauthorized
+		}
+		if !actor.Owner && admin != 1 {
+			return errForbidden
+		}
+		var eligible int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM space_members m JOIN users u ON u.id=m.user_id WHERE m.space_id=? AND m.user_id=? AND u.is_guest=0 AND u.disabled_at IS NULL`, spaceID, uid).Scan(&eligible); err != nil {
+			return err
+		}
+		if eligible != 1 {
+			return notFound("unknown_member")
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT owner_id FROM spaces WHERE id=?`, spaceID).Scan(&old); err != nil {
+			return err
+		}
+
 		for _, q := range []struct {
 			sql  string
 			args []any

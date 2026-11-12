@@ -20,6 +20,7 @@ import (
 	"github.com/syntstar/lightspeak/server/internal/config"
 	"github.com/syntstar/lightspeak/server/internal/ratelimit"
 	"github.com/syntstar/lightspeak/server/internal/store"
+	"github.com/syntstar/lightspeak/server/internal/worklimit"
 )
 
 const ProtocolVersion = 1
@@ -139,6 +140,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, worklimit.ErrBusy) {
+		w.Header().Set("Retry-After", "1")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "server_busy", "message": "try again shortly"}})
+		return
+	}
 	var ae *apiError
 	if errors.As(err, &ae) {
 		writeJSON(w, ae.Status, map[string]any{"error": map[string]string{"code": ae.Code, "message": ae.Message}})
@@ -338,7 +344,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 // Router builds the public HTTP handler (API, WebSocket, files, landing pages).
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
-	r.Use(s.recoverer, securityHeaders, s.cors)
+	r.Use(s.recoverer, securityHeaders, s.cors, requestReadDeadline)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.R.PingContext(r.Context()); err != nil {
@@ -458,4 +464,19 @@ func (s *Server) signupPolicy() string {
 		return config.SignupAdmin
 	}
 	return s.cfg.Signup
+}
+
+// Bound body reads independently of idle WebSocket lifetime. Uploads receive a
+// generous budget; ordinary JSON requests should finish promptly.
+func requestReadDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			budget := 30 * time.Second
+			if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/channels/") && strings.HasSuffix(r.URL.Path, "/attachments") {
+				budget = 10 * time.Minute
+			}
+			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(budget))
+		}
+		next.ServeHTTP(w, r)
+	})
 }

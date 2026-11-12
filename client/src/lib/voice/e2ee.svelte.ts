@@ -9,6 +9,7 @@
 //  - e2ee_key_request: share the key with devices that lack an envelope.
 //  - e2ee_rotate_request / pending rotations: create epoch+1 for the
 //    remaining members (after a kick, ban, leave or device revocation).
+import { KeySession } from "./keySession";
 import { ApiError, errorCode } from "../api/client";
 import type { ID } from "../api/types";
 import { native, hasStore } from "../native";
@@ -43,6 +44,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min: number, max: number) => sleep(min + Math.random() * (max - min));
 
 class KeyManager {
+  private lifetime = new AbortController();
+  private owner: { session: object | null; server: string } | null = null;
+
+  private scope(): KeySession {
+    const session = app.sessionIdentity;
+    if (this.owner?.session !== session || this.owner?.server !== api.base) {
+      this.forget();
+      this.owner = { session, server: api.base };
+    }
+    return new KeySession(api, () => app.sessionIdentity === session, this.lifetime.signal);
+  }
   /** containerId → epoch → raw 32-byte key (base64, memory only). */
   private keys = new Map<ID, Map<number, string>>();
   private waiters = new Map<string, (() => void)[]>();
@@ -65,7 +77,8 @@ class KeyManager {
     this.epochListeners.push(fn);
   }
 
-  private cache(cid: ID, epoch: number, key: string): void {
+  private cache(cid: ID, epoch: number, key: string, scope: KeySession): void {
+    scope.check();
     let m = this.keys.get(cid);
     if (!m) this.keys.set(cid, (m = new Map()));
     m.set(epoch, key);
@@ -74,7 +87,13 @@ class KeyManager {
   }
 
   forget(): void {
+    this.owner = null;
+    this.lifetime.abort();
+    this.lifetime = new AbortController();
     this.keys.clear();
+    this.latest.clear();
+    for (const fs of this.waiters.values()) for (const done of fs) done();
+    this.waiters.clear();
     this.waiting = {};
   }
 
@@ -90,26 +109,31 @@ class KeyManager {
 
   /** Raw media key for a container/epoch; throws ApiError on failure. */
   async key(cid: ID, epoch: number): Promise<Uint8Array> {
-    return b64ToBytes(await this.keyB64(cid, epoch));
+    const scope = this.scope();
+    const key = await scope.run(() => this.keyB64(cid, epoch));
+    scope.check();
+    return b64ToBytes(key);
   }
 
   private async keyB64(cid: ID, epoch: number): Promise<string> {
+    const scope = this.scope();
     const hit = this.keys.get(cid)?.get(epoch);
     if (hit) return hit;
     if (!hasStore) throw new ApiError("device_key_missing", 0);
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
       try {
-        const r = await api.get<EnvelopeResp>(`/e2ee/${cid}/envelope?epoch=${epoch}`);
-        const key = await native.e2eeOpen(api.base, r.ciphertext);
-        this.cache(cid, epoch, key);
+        const r = await scope.get<EnvelopeResp>(`/e2ee/${cid}/envelope?epoch=${epoch}`);
+        const key = await scope.run(() => native.e2eeOpen(scope.api.base, r.ciphertext));
+        this.cache(cid, epoch, key, scope);
         if (r.currentEpoch > this.latestEpoch(cid)) this.latest.set(cid, r.currentEpoch);
         delete this.waiting[cid];
         return key;
       } catch (e) {
+        scope.check();
         const code = errorCode(e);
         if (code === "no_key_yet") {
-          const key = await this.createKey(cid, epoch);
+          const key = await this.createKey(cid, epoch, scope);
           if (key) return key;
           continue; // somebody else was faster: fetch theirs
         }
@@ -122,7 +146,7 @@ class KeyManager {
           throw new ApiError("e2ee_key_timeout", 0);
         }
         this.waiting[cid] = true;
-        await this.waitForKey(cid, epoch, 5000);
+        await scope.run(() => this.waitForKey(cid, epoch, 5000));
         // Nobody could share this epoch and the server had it rotated: the
         // caller moves on to the new one instead of waiting for the old.
         if (this.latestEpoch(cid) > epoch) {
@@ -152,14 +176,14 @@ class KeyManager {
   }
 
   /** Bootstraps the first key of an epoch; null when another device won. */
-  private async createKey(cid: ID, epoch: number): Promise<string | null> {
-    const key = await native.e2eeNewKey();
-    const devs = await api.get<DevicesResp>(`/e2ee/${cid}/devices`);
+  private async createKey(cid: ID, epoch: number, scope: KeySession): Promise<string | null> {
+    const key = await scope.run(() => native.e2eeNewKey());
+    const devs = await scope.get<DevicesResp>(`/e2ee/${cid}/devices`);
     if (devs.epoch !== epoch) return null;
-    const envelopes = await this.seal(devs.devices, key);
+    const envelopes = await this.seal(devs.devices, key, scope);
     try {
-      await api.post(`/e2ee/${cid}/envelopes`, { epoch, envelopes });
-      this.cache(cid, epoch, key);
+      await scope.post(`/e2ee/${cid}/envelopes`, { epoch, envelopes });
+      this.cache(cid, epoch, key, scope);
       return key;
     } catch (e) {
       if (["key_exists", "epoch_conflict"].includes(errorCode(e))) return null;
@@ -190,58 +214,66 @@ class KeyManager {
     if (dirty) savePrefs();
   }
 
-  private async seal(devices: DevicesResp["devices"], key: string) {
+  private async seal(devices: DevicesResp["devices"], key: string, scope: KeySession) {
+    scope.check();
     this.checkKeys(devices);
     const out: { deviceId: ID; ciphertext: string }[] = [];
     for (const d of devices) {
       if (!d.publicKey) continue;
       try {
-        out.push({ deviceId: d.deviceId, ciphertext: await native.e2eeSeal(d.publicKey, key) });
+        out.push({
+          deviceId: d.deviceId,
+          ciphertext: await scope.run(() => native.e2eeSeal(d.publicKey, key)),
+        });
       } catch {
+        scope.check();
         // invalid key of one device must not block the others
       }
     }
+    scope.check();
     return out;
   }
 
   /** Shares our key with devices that have no envelope yet. */
   private async share(cid: ID, epoch: number, deviceIds: ID[]): Promise<void> {
-    await jitter(150, 1500); // let one member answer, the rest find nothing to do
+    const scope = this.scope();
+    await scope.run(() => jitter(150, 1500)); // let one member answer, the rest find nothing to do
     let key: string;
     try {
-      key = await this.ownKeyNoCreate(cid, epoch);
+      key = await this.ownKeyNoCreate(cid, epoch, scope);
     } catch {
       return; // we have no key for this epoch either
     }
-    const devs = await api.get<DevicesResp>(`/e2ee/${cid}/devices`);
+    const devs = await scope.get<DevicesResp>(`/e2ee/${cid}/devices`);
     if (devs.epoch !== epoch) return;
     const want = new Set(deviceIds);
     const missing = devs.devices.filter((d) => !d.hasEnvelope && (want.size === 0 || want.has(d.deviceId)));
     if (!missing.length) return;
-    const envelopes = await this.seal(missing, key);
-    if (envelopes.length) await api.post(`/e2ee/${cid}/envelopes`, { epoch, envelopes }).catch(() => {});
+    const envelopes = await this.seal(missing, key, scope);
+    if (envelopes.length) await scope.post(`/e2ee/${cid}/envelopes`, { epoch, envelopes }).catch(() => {});
   }
 
-  private async ownKeyNoCreate(cid: ID, epoch: number): Promise<string> {
+  private async ownKeyNoCreate(cid: ID, epoch: number, scope: KeySession): Promise<string> {
     const hit = this.keys.get(cid)?.get(epoch);
     if (hit) return hit;
-    const r = await api.get<EnvelopeResp>(`/e2ee/${cid}/envelope?epoch=${epoch}`);
-    const key = await native.e2eeOpen(api.base, r.ciphertext);
-    this.cache(cid, epoch, key);
+    const r = await scope.get<EnvelopeResp>(`/e2ee/${cid}/envelope?epoch=${epoch}`);
+    const key = await scope.run(() => native.e2eeOpen(scope.api.base, r.ciphertext));
+    this.cache(cid, epoch, key, scope);
     return key;
   }
 
   /** Creates epoch+1 for the current members (rotation after removal). */
   private async rotate(cid: ID): Promise<void> {
+    const scope = this.scope();
     if (!hasStore) return;
-    await jitter(300, 3000);
-    const devs = await api.get<DevicesResp>(`/e2ee/${cid}/devices`);
+    await scope.run(() => jitter(300, 3000));
+    const devs = await scope.get<DevicesResp>(`/e2ee/${cid}/devices`);
     const newEpoch = devs.epoch + 1;
-    const key = await native.e2eeNewKey();
-    const envelopes = await this.seal(devs.devices, key);
+    const key = await scope.run(() => native.e2eeNewKey());
+    const envelopes = await this.seal(devs.devices, key, scope);
     try {
-      await api.post(`/e2ee/${cid}/rotate`, { newEpoch, envelopes });
-      this.cache(cid, newEpoch, key);
+      await scope.post(`/e2ee/${cid}/rotate`, { newEpoch, envelopes });
+      this.cache(cid, newEpoch, key, scope);
     } catch (e) {
       // Another member rotated first (rotation_not_pending / epoch_conflict).
       if (!["epoch_conflict", "forbidden", "rotation_not_pending"].includes(errorCode(e)))
@@ -251,8 +283,12 @@ class KeyManager {
 
   private onEvent(op: string, d: unknown): void {
     switch (op) {
+      case "session_end":
+        this.forget();
+        break;
       case "ready":
-        for (const cid of (d as { pendingRotations?: ID[] }).pendingRotations ?? []) void this.rotate(cid);
+        for (const cid of (d as { pendingRotations?: ID[] }).pendingRotations ?? [])
+          void this.rotate(cid).catch(() => {});
         break;
       case "e2ee_key_available": {
         const x = d as { containerId: ID; epoch: number };

@@ -109,12 +109,24 @@ if (-not $SkipChecks) {
     Step 'Server checks (vet, test, staticcheck, govulncheck)'
     Run $server { go vet ./... }
     Run $server { go test -count=1 ./... }
-    if (Get-Command staticcheck -ErrorAction SilentlyContinue) { Run $server { staticcheck ./... } }
-    else { Write-Warning 'staticcheck not found – skipped' }
-    if (Get-Command govulncheck -ErrorAction SilentlyContinue) { Run $server { govulncheck ./... } }
-    else { Write-Warning 'govulncheck not found – skipped' }
+    Run $server { go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./... }
+    Run $server { go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./... }
   }
   if (-not $SkipClient) {
+    Step 'Dependency security checks'
+    Run $client { npm ci }
+    Run $client { npm audit --omit=dev }
+    # The documented low-severity deepmerge build-tool warning remains visible.
+    Run $client { npm audit --audit-level=moderate }
+    if (-not (Get-Command cargo-audit -ErrorAction SilentlyContinue)) {
+      throw 'Install cargo-audit 0.22.2: cargo install cargo-audit --version 0.22.2 --locked'
+    }
+    if ((cargo audit --version) -notmatch '\b0\.22\.2$') { throw 'cargo-audit 0.22.2 is required.' }
+    Run (Join-Path $client 'src-tauri') { cargo audit }
+    # Tauri's test build embeds frontend assets, including on a fresh checkout.
+    Run $client { npm run build }
+    Run (Join-Path $client 'src-tauri') { cargo test --locked }
+    Run (Join-Path $client 'src-tauri') { cargo clippy --locked --all-targets -- -D warnings }
     Step 'Client checks (types, lint, unit tests)'
     Run $client { npm run check }
     Run $client { npm run lint }

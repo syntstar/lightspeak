@@ -906,24 +906,21 @@ func (v *Voice) confirm(ctx context.Context, cid, uid int64) {
 		return
 	}
 	v.mu.Unlock()
-	// Joined without a fresh /voice/join (e.g. after a server restart):
-	// adopt it if the user may still be there, otherwise kick.
-	c, err := v.s.loadChannel(ctx, cid)
-	if err != nil {
+	// A still-valid LiveKit token must not restore permissions revoked since
+	// it was issued (including after a server restart).
+	se := &Session{UserID: uid}
+	var active int
+	err := v.s.db.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id=? AND disabled_at IS NULL`, uid).Scan(&active)
+	c, a, accessErr := v.s.channelAccess(ctx, se, cid)
+	if err != nil || active != 1 || accessErr != nil || (c.Kind != "voice" && !c.isDM()) || (!c.isDM() && !c.may(a, PermConnect)) {
 		go v.removeFromRoom(cid, uid)
 		return
 	}
-	allowed := false
-	if c.isDM() {
-		var n int
-		_ = v.s.db.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_members WHERE channel_id=? AND user_id=?`, cid, uid).Scan(&n)
-		allowed = n > 0
-	} else if a, err := spaceAccess(ctx, v.s.db.R, c.SpaceID, uid); err == nil && a.Member {
-		allowed = true
-	}
-	if !allowed {
-		go v.removeFromRoom(cid, uid)
-		return
+	if c.Kind == "dm" {
+		if err := v.s.checkDMAllowed(ctx, c, uid); err != nil {
+			go v.removeFromRoom(cid, uid)
+			return
+		}
 	}
 	id := ID(cid)
 	v.mu.Lock()
@@ -932,10 +929,14 @@ func (v *Voice) confirm(ctx context.Context, cid, uid int64) {
 		prev = int64(*old.ChannelID)
 	}
 	st = &VoiceState{UserID: ID(uid), ChannelID: &id, SpaceID: optID(c.SpaceID), ServerMuted: v.muted[[2]int64{c.containerID(), uid}], joinedAt: time.Now(), confirmed: true}
+	if !c.isDM() {
+		st.applyTalk(c, a)
+	}
 	v.states[uid] = st
 	snap := *st
 	v.ensureReconcile()
 	v.mu.Unlock()
+	v.updatePermission(ctx, cid, uid, &snap)
 	v.emitState(ctx, snap, prev)
 }
 
